@@ -131,7 +131,7 @@ let generateFileCompositionMermaid (model: ArchitectureModel) =
 
         for (file, _) in filesInCurrentFolder do
             let fileBoxId = makeId "filebox" (projectId + "|" + file.id)
-            sb.AppendLine($"{indent}subgraph {fileBoxId}[\"{escapeLabel file.path}\"]") |> ignore
+            sb.AppendLine($"{indent}subgraph {fileBoxId}[\"{escapeLabel (Path.GetFileName(file.path))}\"]") |> ignore
             sb.AppendLine($"{indent}  style {fileBoxId} fill:#fff7ed,stroke:#f59e0b,stroke-width:1px") |> ignore
 
             let fileModules = Map.tryFind file.id modulesByFile |> Option.defaultValue [] |> List.sortBy (fun m -> m.fullName)

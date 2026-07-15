@@ -203,7 +203,7 @@ let generateIndexHtml (diagrams: (string * string) list) =
     sb.AppendLine("    .type { background: #e9d5ff; }") |> ignore
     sb.AppendLine("    h1, h2 { margin-top: 0; }") |> ignore
     sb.AppendLine("    pre.mermaid { background: #ffffff; overflow: auto; }") |> ignore
-    sb.AppendLine("    pre.mermaid svg { max-width: none !important; height: auto !important; }") |> ignore
+    sb.AppendLine("    pre.mermaid svg { max-width: none !important; height: auto !important; min-height: 200vh !important; }") |> ignore
     sb.AppendLine("  </style>") |> ignore
     sb.AppendLine("  <script type=\"module\">") |> ignore
     sb.AppendLine("    import mermaid from \"https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs\";") |> ignore

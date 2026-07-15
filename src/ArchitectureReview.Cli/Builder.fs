@@ -196,6 +196,20 @@ let buildModel (rootPath: string) =
                     details = p.projectName
                 }))
 
+    let referencedProjectIdsByProjectId =
+        parsedProjects
+        |> List.map (fun p ->
+            let sourceProjectId = projectIds[p.projectPath]
+            let referencedIds =
+                p.projectReferences
+                |> List.choose (fun projectRef ->
+                    if Set.contains projectRef knownProjects then Some projectIds[projectRef]
+                    else None)
+                |> Set.ofList
+
+            sourceProjectId, referencedIds)
+        |> Map.ofList
+
     let moduleUseEdges =
         let candidatePrefixes (name: string) =
             let segments = name.Split('.', StringSplitOptions.RemoveEmptyEntries) |> Array.toList
@@ -203,6 +217,12 @@ let buildModel (rootPath: string) =
 
         let tryResolveTargetModule projectId (sourceModuleName: string) (targetName: string) =
             let sourceSegments = sourceModuleName.Split('.', StringSplitOptions.RemoveEmptyEntries) |> Array.toList
+            let candidateProjectIds =
+                projectId
+                :: (referencedProjectIdsByProjectId
+                    |> Map.tryFind projectId
+                    |> Option.defaultValue Set.empty
+                    |> Set.toList)
 
             let scopedCandidates =
                 [ for len in sourceSegments.Length .. -1 .. 1 ->
@@ -214,7 +234,9 @@ let buildModel (rootPath: string) =
             allCandidates
             |> List.collect candidatePrefixes
             |> List.distinct
-            |> List.tryPick (fun candidate -> Map.tryFind (projectId, candidate) moduleByQualifiedName)
+            |> List.tryPick (fun candidate ->
+                candidateProjectIds
+                |> List.tryPick (fun pid -> Map.tryFind (pid, candidate) moduleByQualifiedName))
 
         rawModuleUses
         |> List.choose (fun dep ->

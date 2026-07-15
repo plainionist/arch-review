@@ -239,16 +239,15 @@ let generateIndexHtml (diagrams: (string * string) list) =
     sb.AppendLine("        event.preventDefault();") |> ignore
     sb.AppendLine("") |> ignore
     sb.AppendLine("        const zoomFactor = event.deltaY < 0 ? 1.1 : 0.9;") |> ignore
-    sb.AppendLine("        const previousScale = scale;") |> ignore
+    sb.AppendLine("        const containerRect = container.getBoundingClientRect();") |> ignore
+    sb.AppendLine("        const pointerX = event.clientX - containerRect.left + container.scrollLeft;") |> ignore
+    sb.AppendLine("        const pointerY = event.clientY - containerRect.top + container.scrollTop;") |> ignore
+    sb.AppendLine("        const contentX = (pointerX - translateX) / scale;") |> ignore
+    sb.AppendLine("        const contentY = (pointerY - translateY) / scale;") |> ignore
+    sb.AppendLine("") |> ignore
     sb.AppendLine("        scale = clamp(scale * zoomFactor, 0.3, 5);") |> ignore
-    sb.AppendLine("") |> ignore
-    sb.AppendLine("        const rect = svg.getBoundingClientRect();") |> ignore
-    sb.AppendLine("        const offsetX = event.clientX - rect.left;") |> ignore
-    sb.AppendLine("        const offsetY = event.clientY - rect.top;") |> ignore
-    sb.AppendLine("") |> ignore
-    sb.AppendLine("        const ratio = scale / previousScale;") |> ignore
-    sb.AppendLine("        translateX = offsetX - (offsetX - translateX) * ratio;") |> ignore
-    sb.AppendLine("        translateY = offsetY - (offsetY - translateY) * ratio;") |> ignore
+    sb.AppendLine("        translateX = pointerX - contentX * scale;") |> ignore
+    sb.AppendLine("        translateY = pointerY - contentY * scale;") |> ignore
     sb.AppendLine("") |> ignore
     sb.AppendLine("        applyTransform();") |> ignore
     sb.AppendLine("      }, { passive: false });") |> ignore

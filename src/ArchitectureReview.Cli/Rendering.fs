@@ -180,8 +180,12 @@ let generateFileCompositionMermaid (model: ArchitectureModel) =
         renderFolderTree p.id folderPaths filesWithFolder "" "    "
         sb.AppendLine("  end") |> ignore
 
-    for e in model.edges |> List.filter (fun e -> e.kind = "module-use" || e.kind = "type-use") do
-        let label = if e.kind = "module-use" then "uses" else "type"
+    for e in model.edges |> List.filter (fun e -> e.kind = "module-use" || e.kind = "type-use" || e.kind = "module-type-use") do
+        let label =
+            match e.kind with
+            | "module-use" -> "uses"
+            | "module-type-use" -> "uses-type"
+            | _ -> "type"
         sb.AppendLine($"  {e.sourceId} -->|{label}| {e.targetId}") |> ignore
 
     sb.ToString()

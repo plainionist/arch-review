@@ -58,14 +58,6 @@ let run (options: CliOptions) =
         writeJson jsonPath model
         File.WriteAllText(htmlPath, generateIndexHtml diagrams)
 
-        printfn "Analyzed root: %s" targetFolder
-        printfn "Projects: %d" model.projects.Length
-        printfn "Folders: %d" model.folders.Length
-        printfn "Files: %d" model.files.Length
-        printfn "Modules: %d" model.modules.Length
-        printfn "Types: %d" model.types.Length
-        printfn "Edges: %d" model.edges.Length
-        printfn "Warnings: %d" model.warnings.Length
         printfn "Output written to: %s" htmlPath
         0
 

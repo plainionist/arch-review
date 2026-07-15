@@ -76,6 +76,64 @@ let collectReferencedTypeNames (repr: SynTypeDefnRepr) =
     | SynTypeDefnRepr.Simple(simpleRepr, _) -> collectTypesFromSimpleRepr simpleRepr
     | _ -> []
 
+let rec collectTypeNamesFromPattern (pat: SynPat) =
+    match pat with
+    | SynPat.Typed(innerPat, patType, _) ->
+        (collectTypeNamesFromPattern innerPat) @ (collectTypeNamesFromSynType patType)
+    | SynPat.Attrib(innerPat, _, _) -> collectTypeNamesFromPattern innerPat
+    | SynPat.Or(leftPat, rightPat, _, _) ->
+        (collectTypeNamesFromPattern leftPat) @ (collectTypeNamesFromPattern rightPat)
+    | SynPat.Ands(patterns, _) -> patterns |> List.collect collectTypeNamesFromPattern
+    | SynPat.Paren(innerPat, _) -> collectTypeNamesFromPattern innerPat
+    | SynPat.Tuple(_, patterns, _, _) -> patterns |> List.collect collectTypeNamesFromPattern
+    | _ -> []
+
+let rec collectTypeNamesFromExpr (expr: SynExpr) =
+    match expr with
+    | SynExpr.LongIdent(_, SynLongIdent(id, _, _), _, _) -> [ joinIdentifiers id ]
+    | SynExpr.Typed(innerExpr, typedAs, _) ->
+        (collectTypeNamesFromExpr innerExpr) @ (collectTypeNamesFromSynType typedAs)
+    | SynExpr.New(_, newType, ctorExpr, _) ->
+        (collectTypeNamesFromSynType newType) @ (collectTypeNamesFromExpr ctorExpr)
+    | SynExpr.Upcast(innerExpr, targetType, _) ->
+        (collectTypeNamesFromExpr innerExpr) @ (collectTypeNamesFromSynType targetType)
+    | SynExpr.Downcast(innerExpr, targetType, _) ->
+        (collectTypeNamesFromExpr innerExpr) @ (collectTypeNamesFromSynType targetType)
+    | SynExpr.TypeApp(innerExpr, _, typeArgs, _, _, _, _) ->
+        (collectTypeNamesFromExpr innerExpr) @ (typeArgs |> List.collect collectTypeNamesFromSynType)
+    | SynExpr.App(_, _, funcExpr, argExpr, _) ->
+        (collectTypeNamesFromExpr funcExpr) @ (collectTypeNamesFromExpr argExpr)
+    | SynExpr.LetOrUse(_, _, _, _, bindings, bodyExpr, _, _) ->
+        (bindings |> List.collect collectTypeNamesFromBinding)
+        @ (collectTypeNamesFromExpr bodyExpr)
+    | SynExpr.Lambda(_, _, _, bodyExpr, _, _, _) -> collectTypeNamesFromExpr bodyExpr
+    | SynExpr.Sequential(_, _, firstExpr, secondExpr, _, _) ->
+        (collectTypeNamesFromExpr firstExpr) @ (collectTypeNamesFromExpr secondExpr)
+    | SynExpr.IfThenElse(condExpr, thenExpr, elseExprOpt, _, _, _, _) ->
+        (collectTypeNamesFromExpr condExpr)
+        @ (collectTypeNamesFromExpr thenExpr)
+        @ (elseExprOpt |> Option.map collectTypeNamesFromExpr |> Option.defaultValue [])
+    | SynExpr.Paren(innerExpr, _, _, _) -> collectTypeNamesFromExpr innerExpr
+    | SynExpr.Tuple(_, exprs, _, _) -> exprs |> List.collect collectTypeNamesFromExpr
+    | SynExpr.ArrayOrList(_, exprs, _) -> exprs |> List.collect collectTypeNamesFromExpr
+    | SynExpr.Match(_, matchExpr, clauses, _, _) ->
+        (collectTypeNamesFromExpr matchExpr)
+        @ (clauses |> List.collect (fun (SynMatchClause(clausePat, _, clauseExpr, _, _, _)) ->
+            (collectTypeNamesFromPattern clausePat) @ (collectTypeNamesFromExpr clauseExpr)))
+    | _ -> []
+
+and collectTypeNamesFromBinding (binding: SynBinding) =
+    let (SynBinding(_, _, _, _, _, _, _, pat, returnInfo, expr, _, _, _)) = binding
+
+    let returnTypes =
+        match returnInfo with
+        | Some(SynBindingReturnInfo(returnType, _, _, _)) -> collectTypeNamesFromSynType returnType
+        | None -> []
+
+    (collectTypeNamesFromPattern pat)
+    @ returnTypes
+    @ (collectTypeNamesFromExpr expr)
+
 let parseFsproj (projectPath: string) =
     let projectPath = normalizePath projectPath
     let projectDir = Path.GetDirectoryName(projectPath)
@@ -146,6 +204,7 @@ let extractFromParseTree (projectPath: string) (filePath: string) (parseTree: Pa
     let modules = ResizeArray<RawModule>()
     let types = ResizeArray<RawType>()
     let moduleUses = ResizeArray<RawDependency>()
+    let moduleTypeUses = ResizeArray<RawDependency>()
 
     let rec walkDecls (currentModule: string option) (decls: SynModuleDecl list) =
         for decl in decls do
@@ -168,6 +227,21 @@ let extractFromParseTree (projectPath: string) (filePath: string) (parseTree: Pa
             | SynModuleDecl.Types(typeDefns, _) ->
                 for typeDefn in typeDefns do
                     types.Add(parseTypeDefn projectPath filePath currentModule typeDefn)
+            | SynModuleDecl.Let(_, bindings, _) ->
+                for binding in bindings do
+                    let usedTypeNames = collectTypeNamesFromBinding binding
+                    match currentModule with
+                    | Some sourceModule ->
+                        for typeName in usedTypeNames do
+                            moduleTypeUses.Add({ source = sourceModule; target = typeName; details = "binding-type" })
+                    | None -> ()
+            | SynModuleDecl.Expr(expr, _) ->
+                let usedTypeNames = collectTypeNamesFromExpr expr
+                match currentModule with
+                | Some sourceModule ->
+                    for typeName in usedTypeNames do
+                        moduleTypeUses.Add({ source = sourceModule; target = typeName; details = "expr-type" })
+                | None -> ()
             | SynModuleDecl.NamespaceFragment fragment ->
                 walkModuleOrNamespace fragment
             | _ -> ()
@@ -187,5 +261,6 @@ let extractFromParseTree (projectPath: string) (filePath: string) (parseTree: Pa
         modules = modules |> Seq.distinctBy (fun m -> m.projectPath, m.filePath, m.fullName) |> Seq.toList
         types = types |> Seq.distinctBy (fun t -> t.projectPath, t.filePath, t.fullName) |> Seq.toList
         moduleUses = moduleUses |> Seq.distinctBy (fun d -> d.source, d.target, d.details) |> Seq.toList
+        moduleTypeUses = moduleTypeUses |> Seq.distinctBy (fun d -> d.source, d.target, d.details) |> Seq.toList
         warnings = []
     }

@@ -101,6 +101,7 @@ let buildModel (rootPath: string) =
     let rawModules = extraction |> List.collect (fun e -> e.modules)
     let rawTypes = extraction |> List.collect (fun e -> e.types)
     let rawModuleUses = extraction |> List.collect (fun e -> e.moduleUses)
+    let rawModuleTypeUses = extraction |> List.collect (fun e -> e.moduleTypeUses)
 
     let modules =
         rawModules
@@ -243,6 +244,37 @@ let buildModel (rootPath: string) =
                 details = details
             })
 
+    let moduleTypeUseEdges =
+        rawModuleTypeUses
+        |> List.choose (fun dep ->
+            let sourceModule =
+                modules
+                |> List.tryFind (fun m -> m.fullName = dep.source)
+
+            match sourceModule with
+            | Some source ->
+                let targetExact = Map.tryFind (source.projectId, dep.target) typesByProjectAndName
+                let targetLeaf = Map.tryFind (source.projectId, dep.target.Split('.') |> Array.last) typesByProjectAndLeafName
+
+                match targetExact, targetLeaf with
+                | Some target, _ ->
+                    Some {
+                        sourceId = source.id
+                        targetId = target.id
+                        kind = "module-type-use"
+                        details = dep.details
+                    }
+                | None, Some [ target ] ->
+                    Some {
+                        sourceId = source.id
+                        targetId = target.id
+                        kind = "module-type-use"
+                        details = dep.details
+                    }
+                | _ -> None
+            | None -> None)
+        |> List.distinctBy (fun e -> e.sourceId, e.targetId, e.kind)
+
     let containmentEdges =
         let folderContainment =
             files
@@ -283,6 +315,7 @@ let buildModel (rootPath: string) =
             compileOrderEdges
             moduleUseEdges
             typeUseEdges
+            moduleTypeUseEdges
             containmentEdges
         ]
         |> List.sortBy (fun e -> e.kind, e.sourceId, e.targetId)

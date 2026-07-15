@@ -93,6 +93,7 @@ type ExtractionResult = {
     modules: RawModule list
     types: RawType list
     moduleUses: RawDependency list
+    moduleTypeUses: RawDependency list
     warnings: string list
 }
 

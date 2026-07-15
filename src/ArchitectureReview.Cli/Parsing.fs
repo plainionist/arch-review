@@ -77,10 +77,19 @@ let collectReferencedTypeNames (repr: SynTypeDefnRepr) =
     | _ -> []
 
 let rec collectTypeNamesFromPattern (pat: SynPat) =
+    let collectFromArgPats (argPats: SynArgPats) =
+        match argPats with
+        | SynArgPats.Pats(pats) -> pats |> List.collect collectTypeNamesFromPattern
+        | SynArgPats.NamePatPairs(namePatPairs, _, _) ->
+            namePatPairs |> List.collect (fun (NamePatPairField(_, _, _, p, _)) -> collectTypeNamesFromPattern p)
+
     match pat with
     | SynPat.Typed(innerPat, patType, _) ->
         (collectTypeNamesFromPattern innerPat) @ (collectTypeNamesFromSynType patType)
     | SynPat.Attrib(innerPat, _, _) -> collectTypeNamesFromPattern innerPat
+    | SynPat.As(leftPat, rightPat, _) ->
+        (collectTypeNamesFromPattern leftPat) @ (collectTypeNamesFromPattern rightPat)
+    | SynPat.LongIdent(_, _, _, argPats, _, _) -> collectFromArgPats argPats
     | SynPat.Or(leftPat, rightPat, _, _) ->
         (collectTypeNamesFromPattern leftPat) @ (collectTypeNamesFromPattern rightPat)
     | SynPat.Ands(patterns, _) -> patterns |> List.collect collectTypeNamesFromPattern

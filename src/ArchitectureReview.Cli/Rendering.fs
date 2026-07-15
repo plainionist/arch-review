@@ -202,8 +202,8 @@ let generateIndexHtml (diagrams: (string * string) list) =
     sb.AppendLine("    .module { background: #a7f3d0; }") |> ignore
     sb.AppendLine("    .type { background: #e9d5ff; }") |> ignore
     sb.AppendLine("    h1, h2 { margin-top: 0; }") |> ignore
-    sb.AppendLine("    pre.mermaid { background: #ffffff; overflow: auto; }") |> ignore
-    sb.AppendLine("    pre.mermaid svg { max-width: none !important; height: auto !important; min-height: 200vh !important; }") |> ignore
+    sb.AppendLine("    pre.mermaid { background: #ffffff; overflow: hidden; margin: 0; }") |> ignore
+    sb.AppendLine("    pre.mermaid svg { max-width: none !important; vertical-align: top; display: block; }") |> ignore
     sb.AppendLine("  </style>") |> ignore
     sb.AppendLine("  <script type=\"module\">") |> ignore
     sb.AppendLine("    import mermaid from \"https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs\";") |> ignore
@@ -240,6 +240,15 @@ let generateIndexHtml (diagrams: (string * string) list) =
     sb.AppendLine("      let dragStartViewY = 0;") |> ignore
     sb.AppendLine("") |> ignore
     sb.AppendLine("      container.style.overflow = 'auto';") |> ignore
+    sb.AppendLine("      const renderedRect = svg.getBoundingClientRect();") |> ignore
+    sb.AppendLine("      const paddedHeight = Math.ceil(renderedRect.height * 2);") |> ignore
+    sb.AppendLine("      const panHeight = Math.max(1, renderedRect.height);") |> ignore
+    sb.AppendLine("      container.style.height = `${paddedHeight}px`;") |> ignore
+    sb.AppendLine("      container.style.minHeight = `${paddedHeight}px`;") |> ignore
+    sb.AppendLine("      container.style.display = 'block';") |> ignore
+    sb.AppendLine("      svg.setAttribute('preserveAspectRatio', 'xMinYMin meet');") |> ignore
+    sb.AppendLine("      svg.style.width = '100%';") |> ignore
+    sb.AppendLine("      svg.style.height = '100%';") |> ignore
     sb.AppendLine("      svg.style.cursor = 'grab';") |> ignore
     sb.AppendLine("") |> ignore
     sb.AppendLine("      const applyView = () => {") |> ignore
@@ -301,7 +310,7 @@ let generateIndexHtml (diagrams: (string * string) list) =
     sb.AppendLine("        const dxPx = event.clientX - dragStartClientX;") |> ignore
     sb.AppendLine("        const dyPx = event.clientY - dragStartClientY;") |> ignore
     sb.AppendLine("        const unitsPerPixelX = view.width / rect.width;") |> ignore
-    sb.AppendLine("        const unitsPerPixelY = view.height / rect.height;") |> ignore
+    sb.AppendLine("        const unitsPerPixelY = view.height / panHeight;") |> ignore
     sb.AppendLine("        view.x = dragStartViewX - (dxPx * unitsPerPixelX);") |> ignore
     sb.AppendLine("        view.y = dragStartViewY - (dyPx * unitsPerPixelY);") |> ignore
     sb.AppendLine("        applyView();") |> ignore

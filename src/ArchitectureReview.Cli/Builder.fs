@@ -196,7 +196,7 @@ let buildModel (rootPath: string) =
                     details = p.projectName
                 }))
 
-    let referencedProjectIdsByProjectId =
+    let directlyReferencedProjectIdsByProjectId =
         parsedProjects
         |> List.map (fun p ->
             let sourceProjectId = projectIds[p.projectPath]
@@ -209,6 +209,23 @@ let buildModel (rootPath: string) =
 
             sourceProjectId, referencedIds)
         |> Map.ofList
+
+    let referencedProjectIdsByProjectId =
+        let rec collectTransitively (visited: Set<string>) (pending: string list) =
+            match pending with
+            | [] -> visited
+            | current :: rest when Set.contains current visited -> collectTransitively visited rest
+            | current :: rest ->
+                let direct = directlyReferencedProjectIdsByProjectId |> Map.tryFind current |> Option.defaultValue Set.empty
+                collectTransitively (Set.add current visited) (rest @ (direct |> Set.toList))
+
+        projectIds
+        |> Map.toSeq
+        |> Seq.map (fun (_, pid) ->
+            let direct = directlyReferencedProjectIdsByProjectId |> Map.tryFind pid |> Option.defaultValue Set.empty
+            let closure = collectTransitively Set.empty (direct |> Set.toList)
+            pid, closure)
+        |> Map.ofSeq
 
     let moduleUseEdges =
         let candidatePrefixes (name: string) =
@@ -259,6 +276,33 @@ let buildModel (rootPath: string) =
             | None -> None)
         |> List.distinctBy (fun e -> e.sourceId, e.targetId, e.kind)
 
+    let candidateProjectIdsFor projectId =
+        projectId
+        :: (referencedProjectIdsByProjectId
+            |> Map.tryFind projectId
+            |> Option.defaultValue Set.empty
+            |> Set.toList)
+
+    let tryResolveTypeByName sourceProjectId sourceTypeId (targetName: string) =
+        let candidateProjectIds = candidateProjectIdsFor sourceProjectId
+        let targetLeafName = targetName.Split('.') |> Array.last
+
+        let exactMatches =
+            candidateProjectIds
+            |> List.choose (fun pid -> Map.tryFind (pid, targetName) typesByProjectAndName)
+
+        match exactMatches with
+        | target :: _ when target.id <> sourceTypeId -> Some(target.id, targetName)
+        | _ ->
+            let leafMatches =
+                candidateProjectIds
+                |> List.collect (fun pid -> Map.tryFind (pid, targetLeafName) typesByProjectAndLeafName |> Option.defaultValue [])
+                |> List.distinctBy (fun t -> t.id)
+
+            match leafMatches with
+            | [ target ] when target.id <> sourceTypeId -> Some(target.id, targetName)
+            | _ -> None
+
     let rawTypeDependencies =
         rawTypes
         |> List.collect (fun source ->
@@ -267,13 +311,9 @@ let buildModel (rootPath: string) =
 
             source.referencedTypeNames
             |> List.choose (fun targetName ->
-                let targetExact = Map.tryFind (sourceProjectId, targetName) typesByProjectAndName
-                let targetLeaf = Map.tryFind (sourceProjectId, targetName.Split('.') |> Array.last) typesByProjectAndLeafName
-
-                match targetExact, targetLeaf with
-                | Some target, _ when target.id <> sourceId -> Some(sourceId, target.id, targetName)
-                | None, Some [ target ] when target.id <> sourceId -> Some(sourceId, target.id, targetName)
-                | _ -> None))
+                match tryResolveTypeByName sourceProjectId sourceId targetName with
+                | Some(targetId, details) -> Some(sourceId, targetId, details)
+                | None -> None))
 
     let typeUseEdges =
         rawTypeDependencies
@@ -295,23 +335,13 @@ let buildModel (rootPath: string) =
 
             match sourceModule with
             | Some source ->
-                let targetExact = Map.tryFind (source.projectId, dep.target) typesByProjectAndName
-                let targetLeaf = Map.tryFind (source.projectId, dep.target.Split('.') |> Array.last) typesByProjectAndLeafName
-
-                match targetExact, targetLeaf with
-                | Some target, _ ->
+                match tryResolveTypeByName source.projectId "" dep.target with
+                | Some(targetId, details) ->
                     Some {
                         sourceId = source.id
-                        targetId = target.id
+                        targetId = targetId
                         kind = "module-type-use"
-                        details = dep.details
-                    }
-                | None, Some [ target ] ->
-                    Some {
-                        sourceId = source.id
-                        targetId = target.id
-                        kind = "module-type-use"
-                        details = dep.details
+                        details = details
                     }
                 | _ -> None
             | None -> None)

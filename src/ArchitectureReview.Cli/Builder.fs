@@ -197,6 +197,25 @@ let buildModel (rootPath: string) =
                 }))
 
     let moduleUseEdges =
+        let candidatePrefixes (name: string) =
+            let segments = name.Split('.', StringSplitOptions.RemoveEmptyEntries) |> Array.toList
+            [ for len in segments.Length .. -1 .. 1 -> segments |> List.take len |> String.concat "." ]
+
+        let tryResolveTargetModule projectId (sourceModuleName: string) (targetName: string) =
+            let sourceSegments = sourceModuleName.Split('.', StringSplitOptions.RemoveEmptyEntries) |> Array.toList
+
+            let scopedCandidates =
+                [ for len in sourceSegments.Length .. -1 .. 1 ->
+                    let scope = sourceSegments |> List.take len |> String.concat "."
+                    if String.IsNullOrWhiteSpace(scope) then targetName else $"{scope}.{targetName}" ]
+
+            let allCandidates = targetName :: scopedCandidates
+
+            allCandidates
+            |> List.collect candidatePrefixes
+            |> List.distinct
+            |> List.tryPick (fun candidate -> Map.tryFind (projectId, candidate) moduleByQualifiedName)
+
         rawModuleUses
         |> List.choose (fun dep ->
             let sourceModule =
@@ -205,8 +224,8 @@ let buildModel (rootPath: string) =
 
             match sourceModule with
             | Some source ->
-                match Map.tryFind (source.projectId, dep.target) moduleByQualifiedName with
-                | Some target ->
+                match tryResolveTargetModule source.projectId source.fullName dep.target with
+                | Some target when target.id <> source.id ->
                     Some {
                         sourceId = source.id
                         targetId = target.id
@@ -214,6 +233,7 @@ let buildModel (rootPath: string) =
                         details = dep.details
                     }
                 | None -> None
+                | _ -> None
             | None -> None)
         |> List.distinctBy (fun e -> e.sourceId, e.targetId, e.kind)
 

@@ -178,12 +178,7 @@ let generateFileCompositionMermaid (model: ArchitectureModel) =
         sb.AppendLine("  end") |> ignore
 
     for e in model.edges |> List.filter (fun e -> e.kind = "module-use" || e.kind = "type-use" || e.kind = "module-type-use") do
-        let label =
-            match e.kind with
-            | "module-use" -> "uses"
-            | "module-type-use" -> "uses-type"
-            | _ -> "type"
-        sb.AppendLine($"  {e.sourceId} -->|{label}| {e.targetId}") |> ignore
+        sb.AppendLine($"  {e.sourceId} --> {e.targetId}") |> ignore
 
     sb.ToString()
 
@@ -194,7 +189,7 @@ let generateIndexHtml (diagrams: (string * string) list) =
     sb.AppendLine("<head>") |> ignore
     sb.AppendLine("  <meta charset=\"utf-8\" />") |> ignore
     sb.AppendLine("  <meta name=\"viewport\" content=\"width=device-width, initial-scale=1\" />") |> ignore
-    sb.AppendLine("  <title>Architecture Review Charts</title>") |> ignore
+    sb.AppendLine("  <title>Architecture Review</title>") |> ignore
     sb.AppendLine("  <style>") |> ignore
     sb.AppendLine("    body { font-family: Segoe UI, sans-serif; margin: 1.5rem; background: #f5f7fb; color: #111827; }") |> ignore
     sb.AppendLine("    .chart { background: #ffffff; border: 1px solid #d1d5db; border-radius: 0.75rem; padding: 1rem; margin-bottom: 1rem; }") |> ignore
@@ -335,7 +330,7 @@ let generateIndexHtml (diagrams: (string * string) list) =
     sb.AppendLine("  </script>") |> ignore
     sb.AppendLine("</head>") |> ignore
     sb.AppendLine("<body>") |> ignore
-    sb.AppendLine("  <h1>Architecture Review Charts</h1>") |> ignore
+    sb.AppendLine("  <h1>Architecture Review</h1>") |> ignore
     sb.AppendLine("  <div class=\"legend\">") |> ignore
     sb.AppendLine("    <span class=\"legend-item\"><span class=\"swatch project\"></span>Project</span>") |> ignore
     sb.AppendLine("    <span class=\"legend-item\"><span class=\"swatch folder\"></span>Folder</span>") |> ignore

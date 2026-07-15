@@ -134,6 +134,38 @@ and collectTypeNamesFromBinding (binding: SynBinding) =
     @ returnTypes
     @ (collectTypeNamesFromExpr expr)
 
+let rec collectModuleNamesFromExpr (expr: SynExpr) =
+    match expr with
+    | SynExpr.LongIdent(_, SynLongIdent(id, _, _), _, _) when id.Length >= 2 -> [ joinIdentifiers id ]
+    | SynExpr.Typed(innerExpr, _, _) -> collectModuleNamesFromExpr innerExpr
+    | SynExpr.New(_, _, ctorExpr, _) -> collectModuleNamesFromExpr ctorExpr
+    | SynExpr.Upcast(innerExpr, _, _) -> collectModuleNamesFromExpr innerExpr
+    | SynExpr.Downcast(innerExpr, _, _) -> collectModuleNamesFromExpr innerExpr
+    | SynExpr.TypeApp(innerExpr, _, _, _, _, _, _) -> collectModuleNamesFromExpr innerExpr
+    | SynExpr.App(_, _, funcExpr, argExpr, _) ->
+        (collectModuleNamesFromExpr funcExpr) @ (collectModuleNamesFromExpr argExpr)
+    | SynExpr.LetOrUse(_, _, _, _, bindings, bodyExpr, _, _) ->
+        (bindings |> List.collect collectModuleNamesFromBinding)
+        @ (collectModuleNamesFromExpr bodyExpr)
+    | SynExpr.Lambda(_, _, _, bodyExpr, _, _, _) -> collectModuleNamesFromExpr bodyExpr
+    | SynExpr.Sequential(_, _, firstExpr, secondExpr, _, _) ->
+        (collectModuleNamesFromExpr firstExpr) @ (collectModuleNamesFromExpr secondExpr)
+    | SynExpr.IfThenElse(condExpr, thenExpr, elseExprOpt, _, _, _, _) ->
+        (collectModuleNamesFromExpr condExpr)
+        @ (collectModuleNamesFromExpr thenExpr)
+        @ (elseExprOpt |> Option.map collectModuleNamesFromExpr |> Option.defaultValue [])
+    | SynExpr.Paren(innerExpr, _, _, _) -> collectModuleNamesFromExpr innerExpr
+    | SynExpr.Tuple(_, exprs, _, _) -> exprs |> List.collect collectModuleNamesFromExpr
+    | SynExpr.ArrayOrList(_, exprs, _) -> exprs |> List.collect collectModuleNamesFromExpr
+    | SynExpr.Match(_, matchExpr, clauses, _, _) ->
+        (collectModuleNamesFromExpr matchExpr)
+        @ (clauses |> List.collect (fun (SynMatchClause(_, _, clauseExpr, _, _, _)) -> collectModuleNamesFromExpr clauseExpr))
+    | _ -> []
+
+and collectModuleNamesFromBinding (binding: SynBinding) =
+    let (SynBinding(_, _, _, _, _, _, _, _, _, expr, _, _, _)) = binding
+    collectModuleNamesFromExpr expr
+
 let rec collectTypeNamesFromMemberDefn (memberDefn: SynMemberDefn) =
     match memberDefn with
     | SynMemberDefn.Member(binding, _) -> collectTypeNamesFromBinding binding
@@ -150,6 +182,25 @@ let rec collectTypeNamesFromMemberDefn (memberDefn: SynMemberDefn) =
         let (SynTypeDefn(_, _, nestedMembers, _, _, _)) = typeDefn
         nestedMembers |> List.collect collectTypeNamesFromMemberDefn
     | _ -> []
+
+let rec collectModuleNamesFromMemberDefn (memberDefn: SynMemberDefn) =
+    match memberDefn with
+    | SynMemberDefn.Member(binding, _) -> collectModuleNamesFromBinding binding
+    | SynMemberDefn.GetSetMember(getBindingOpt, setBindingOpt, _, _) ->
+        (getBindingOpt |> Option.map collectModuleNamesFromBinding |> Option.defaultValue [])
+        @ (setBindingOpt |> Option.map collectModuleNamesFromBinding |> Option.defaultValue [])
+    | SynMemberDefn.LetBindings(bindings, _, _, _) -> bindings |> List.collect collectModuleNamesFromBinding
+    | SynMemberDefn.Interface(_, _, memberDefnsOpt, _) ->
+        memberDefnsOpt
+        |> Option.map (List.collect collectModuleNamesFromMemberDefn)
+        |> Option.defaultValue []
+    | SynMemberDefn.NestedType(typeDefn, _, _) ->
+        let (SynTypeDefn(_, _, nestedMembers, _, _, _)) = typeDefn
+        nestedMembers |> List.collect collectModuleNamesFromMemberDefn
+    | _ -> []
+
+let collectModuleNamesFromMemberDefns (memberDefns: SynMemberDefn list) =
+    memberDefns |> List.collect collectModuleNamesFromMemberDefn
 
 let collectTypeNamesFromMemberDefns (memberDefns: SynMemberDefn list) =
     memberDefns |> List.collect collectTypeNamesFromMemberDefn
@@ -258,20 +309,43 @@ let extractFromParseTree (projectPath: string) (filePath: string) (parseTree: Pa
             | SynModuleDecl.Types(typeDefns, _) ->
                 for typeDefn in typeDefns do
                     types.Add(parseTypeDefn projectPath filePath currentModule typeDefn)
+
+                    let (SynTypeDefn(_, typeRepr, members, _, _, _)) = typeDefn
+                    let objectModelMembers =
+                        match typeRepr with
+                        | SynTypeDefnRepr.ObjectModel(_, objectMembers, _) -> objectMembers
+                        | _ -> []
+
+                    let usedModuleNames =
+                        (collectModuleNamesFromMemberDefns objectModelMembers)
+                        @ (collectModuleNamesFromMemberDefns members)
+                        |> List.distinct
+
+                    match currentModule with
+                    | Some sourceModule ->
+                        for moduleName in usedModuleNames do
+                            moduleUses.Add({ source = sourceModule; target = moduleName; details = "function-call" })
+                    | None -> ()
             | SynModuleDecl.Let(_, bindings, _) ->
                 for binding in bindings do
                     let usedTypeNames = collectTypeNamesFromBinding binding
+                    let usedModuleNames = collectModuleNamesFromBinding binding
                     match currentModule with
                     | Some sourceModule ->
                         for typeName in usedTypeNames do
                             moduleTypeUses.Add({ source = sourceModule; target = typeName; details = "binding-type" })
+                        for moduleName in usedModuleNames do
+                            moduleUses.Add({ source = sourceModule; target = moduleName; details = "function-call" })
                     | None -> ()
             | SynModuleDecl.Expr(expr, _) ->
                 let usedTypeNames = collectTypeNamesFromExpr expr
+                let usedModuleNames = collectModuleNamesFromExpr expr
                 match currentModule with
                 | Some sourceModule ->
                     for typeName in usedTypeNames do
                         moduleTypeUses.Add({ source = sourceModule; target = typeName; details = "expr-type" })
+                    for moduleName in usedModuleNames do
+                        moduleUses.Add({ source = sourceModule; target = moduleName; details = "function-call" })
                 | None -> ()
             | SynModuleDecl.NamespaceFragment fragment ->
                 walkModuleOrNamespace fragment

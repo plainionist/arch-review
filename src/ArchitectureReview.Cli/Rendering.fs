@@ -137,9 +137,6 @@ let generateFileCompositionMermaid (model: ArchitectureModel) =
             let fileModules = Map.tryFind file.id modulesByFile |> Option.defaultValue [] |> List.sortBy (fun m -> m.fullName)
             let fileTypes = Map.tryFind file.id typesByFile |> Option.defaultValue [] |> List.sortBy (fun t -> t.fullName)
 
-            sb.AppendLine($"{indent}  {file.id}[\"{escapeLabel (Path.GetFileName(file.path))}\"]") |> ignore
-            sb.AppendLine($"{indent}  class {file.id} file") |> ignore
-
             for m in fileModules do
                 sb.AppendLine($"{indent}  {m.id}[\"{escapeLabel m.name}\"]") |> ignore
                 sb.AppendLine($"{indent}  class {m.id} module") |> ignore
@@ -342,9 +339,12 @@ let generateIndexHtml (diagrams: (string * string) list) =
     sb.AppendLine("  <div class=\"legend\">") |> ignore
     sb.AppendLine("    <span class=\"legend-item\"><span class=\"swatch project\"></span>Project</span>") |> ignore
     sb.AppendLine("    <span class=\"legend-item\"><span class=\"swatch folder\"></span>Folder</span>") |> ignore
-    sb.AppendLine("    <span class=\"legend-item\"><span class=\"swatch file\"></span>File</span>") |> ignore
+    sb.AppendLine("    <span class=\"legend-item\"><span class=\"swatch file\"></span>File Box</span>") |> ignore
     sb.AppendLine("    <span class=\"legend-item\"><span class=\"swatch module\"></span>Module</span>") |> ignore
     sb.AppendLine("    <span class=\"legend-item\"><span class=\"swatch type\"></span>Type</span>") |> ignore
+    sb.AppendLine("    <span class=\"legend-item\">uses: module -&gt; module</span>") |> ignore
+    sb.AppendLine("    <span class=\"legend-item\">uses-type: module -&gt; type</span>") |> ignore
+    sb.AppendLine("    <span class=\"legend-item\">type: type -&gt; type</span>") |> ignore
     sb.AppendLine("  </div>") |> ignore
 
     for (title, mermaidText) in diagrams do

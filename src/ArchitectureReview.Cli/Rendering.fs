@@ -211,6 +211,89 @@ let generateIndexHtml (diagrams: (string * string) list) =
     sb.AppendLine("  <script type=\"module\">") |> ignore
     sb.AppendLine("    import mermaid from \"https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs\";") |> ignore
     sb.AppendLine("    mermaid.initialize({ startOnLoad: true });") |> ignore
+    sb.AppendLine("") |> ignore
+    sb.AppendLine("    const clamp = (value, min, max) => Math.min(max, Math.max(min, value));") |> ignore
+    sb.AppendLine("") |> ignore
+    sb.AppendLine("    function enablePanZoomForDiagram(container) {") |> ignore
+    sb.AppendLine("      const svg = container.querySelector('svg');") |> ignore
+    sb.AppendLine("      if (!svg) return;") |> ignore
+    sb.AppendLine("") |> ignore
+    sb.AppendLine("      let scale = 1;") |> ignore
+    sb.AppendLine("      let translateX = 0;") |> ignore
+    sb.AppendLine("      let translateY = 0;") |> ignore
+    sb.AppendLine("      let dragging = false;") |> ignore
+    sb.AppendLine("      let lastX = 0;") |> ignore
+    sb.AppendLine("      let lastY = 0;") |> ignore
+    sb.AppendLine("") |> ignore
+    sb.AppendLine("      container.style.overflow = 'auto';") |> ignore
+    sb.AppendLine("      svg.style.transformOrigin = '0 0';") |> ignore
+    sb.AppendLine("      svg.style.willChange = 'transform';") |> ignore
+    sb.AppendLine("") |> ignore
+    sb.AppendLine("      const applyTransform = () => {") |> ignore
+    sb.AppendLine("        svg.style.transform = `translate(${translateX}px, ${translateY}px) scale(${scale})`; ") |> ignore
+    sb.AppendLine("      };") |> ignore
+    sb.AppendLine("") |> ignore
+    sb.AppendLine("      container.addEventListener('wheel', (event) => {") |> ignore
+    sb.AppendLine("        if (!event.ctrlKey) return;") |> ignore
+    sb.AppendLine("") |> ignore
+    sb.AppendLine("        event.preventDefault();") |> ignore
+    sb.AppendLine("") |> ignore
+    sb.AppendLine("        const zoomFactor = event.deltaY < 0 ? 1.1 : 0.9;") |> ignore
+    sb.AppendLine("        const previousScale = scale;") |> ignore
+    sb.AppendLine("        scale = clamp(scale * zoomFactor, 0.3, 5);") |> ignore
+    sb.AppendLine("") |> ignore
+    sb.AppendLine("        const rect = svg.getBoundingClientRect();") |> ignore
+    sb.AppendLine("        const offsetX = event.clientX - rect.left;") |> ignore
+    sb.AppendLine("        const offsetY = event.clientY - rect.top;") |> ignore
+    sb.AppendLine("") |> ignore
+    sb.AppendLine("        const ratio = scale / previousScale;") |> ignore
+    sb.AppendLine("        translateX = offsetX - (offsetX - translateX) * ratio;") |> ignore
+    sb.AppendLine("        translateY = offsetY - (offsetY - translateY) * ratio;") |> ignore
+    sb.AppendLine("") |> ignore
+    sb.AppendLine("        applyTransform();") |> ignore
+    sb.AppendLine("      }, { passive: false });") |> ignore
+    sb.AppendLine("") |> ignore
+    sb.AppendLine("      svg.addEventListener('mousedown', (event) => {") |> ignore
+    sb.AppendLine("        if (!event.ctrlKey || event.button !== 0) return;") |> ignore
+    sb.AppendLine("") |> ignore
+    sb.AppendLine("        dragging = true;") |> ignore
+    sb.AppendLine("        lastX = event.clientX;") |> ignore
+    sb.AppendLine("        lastY = event.clientY;") |> ignore
+    sb.AppendLine("        svg.style.cursor = 'grabbing';") |> ignore
+    sb.AppendLine("        event.preventDefault();") |> ignore
+    sb.AppendLine("      });") |> ignore
+    sb.AppendLine("") |> ignore
+    sb.AppendLine("      window.addEventListener('mousemove', (event) => {") |> ignore
+    sb.AppendLine("        if (!dragging) return;") |> ignore
+    sb.AppendLine("") |> ignore
+    sb.AppendLine("        const dx = event.clientX - lastX;") |> ignore
+    sb.AppendLine("        const dy = event.clientY - lastY;") |> ignore
+    sb.AppendLine("        lastX = event.clientX;") |> ignore
+    sb.AppendLine("        lastY = event.clientY;") |> ignore
+    sb.AppendLine("") |> ignore
+    sb.AppendLine("        translateX += dx;") |> ignore
+    sb.AppendLine("        translateY += dy;") |> ignore
+    sb.AppendLine("        applyTransform();") |> ignore
+    sb.AppendLine("      });") |> ignore
+    sb.AppendLine("") |> ignore
+    sb.AppendLine("      window.addEventListener('mouseup', () => {") |> ignore
+    sb.AppendLine("        if (!dragging) return;") |> ignore
+    sb.AppendLine("        dragging = false;") |> ignore
+    sb.AppendLine("        svg.style.cursor = 'default';") |> ignore
+    sb.AppendLine("      });") |> ignore
+    sb.AppendLine("") |> ignore
+    sb.AppendLine("      applyTransform();") |> ignore
+    sb.AppendLine("    }") |> ignore
+    sb.AppendLine("") |> ignore
+    sb.AppendLine("    window.addEventListener('load', () => {") |> ignore
+    sb.AppendLine("      const hook = () => {") |> ignore
+    sb.AppendLine("        document.querySelectorAll('pre.mermaid').forEach(enablePanZoomForDiagram);") |> ignore
+    sb.AppendLine("      };") |> ignore
+    sb.AppendLine("") |> ignore
+    sb.AppendLine("      setTimeout(hook, 0);") |> ignore
+    sb.AppendLine("      setTimeout(hook, 250);") |> ignore
+    sb.AppendLine("      setTimeout(hook, 1000);") |> ignore
+    sb.AppendLine("    });") |> ignore
     sb.AppendLine("  </script>") |> ignore
     sb.AppendLine("</head>") |> ignore
     sb.AppendLine("<body>") |> ignore

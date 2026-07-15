@@ -33,3 +33,42 @@ Do not generate one huge diagram by default. Prefer small, focused views derived
 The first implementation should be simple, deterministic, scriptable, and usable by both humans and AI agents.
 
 For F# analysis, prefer compiler-based information over regex-based source parsing where practical.
+
+## Current implementation (starter)
+
+The repository now contains an initial CLI project at `src/ArchitectureReview.Cli`.
+
+### Run
+
+```powershell
+dotnet run --project src/ArchitectureReview.Cli/ArchitectureReview.Cli.fsproj -- <target-folder>
+```
+
+Optional output folder:
+
+```powershell
+dotnet run --project src/ArchitectureReview.Cli/ArchitectureReview.Cli.fsproj -- <target-folder> --output <output-folder>
+```
+
+Default output folder is `<target-folder>/.architecture-review`.
+
+### Generated artifacts
+
+* `architecture.json`
+* `overview.mmd`
+* `compile-order.mmd`
+* `index.html`
+
+### Included in this first cut
+
+* recursive discovery of `.fsproj` files
+* project reference edges from `ProjectReference`
+* file compile-order edges from `Compile` item order
+* deterministic JSON model emission
+* focused Mermaid outputs and an HTML index
+
+### Not implemented yet
+
+* compiler-driven extraction of modules and types
+* module-to-module and type-to-type dependency edges
+* cycle and coupling analysis views

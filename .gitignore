@@ -1,0 +1,30 @@
+# Build artifacts
+bin/
+obj/
+
+# User/IDE files
+.vs/
+.vscode/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+
+# Test and coverage outputs
+TestResults/
+*.trx
+*.coverage
+*.coveragexml
+coverage/
+
+# NuGet caches and packages
+*.nupkg
+*.snupkg
+packages/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Tool output
+.architecture-review/

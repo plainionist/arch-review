@@ -207,10 +207,11 @@ let generateIndexHtml (diagrams: (string * string) list) =
     sb.AppendLine("    .type { background: #e9d5ff; }") |> ignore
     sb.AppendLine("    h1, h2 { margin-top: 0; }") |> ignore
     sb.AppendLine("    pre.mermaid { background: #ffffff; overflow: auto; }") |> ignore
+    sb.AppendLine("    pre.mermaid svg { max-width: none !important; height: auto !important; }") |> ignore
     sb.AppendLine("  </style>") |> ignore
     sb.AppendLine("  <script type=\"module\">") |> ignore
     sb.AppendLine("    import mermaid from \"https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs\";") |> ignore
-    sb.AppendLine("    mermaid.initialize({ startOnLoad: true });") |> ignore
+    sb.AppendLine("    mermaid.initialize({ startOnLoad: true, themeVariables: { fontSize: '18px' } });") |> ignore
     sb.AppendLine("") |> ignore
     sb.AppendLine("    const clamp = (value, min, max) => Math.min(max, Math.max(min, value));") |> ignore
     sb.AppendLine("") |> ignore
@@ -218,70 +219,107 @@ let generateIndexHtml (diagrams: (string * string) list) =
     sb.AppendLine("      const svg = container.querySelector('svg');") |> ignore
     sb.AppendLine("      if (!svg) return;") |> ignore
     sb.AppendLine("") |> ignore
-    sb.AppendLine("      let scale = 1;") |> ignore
-    sb.AppendLine("      let translateX = 0;") |> ignore
-    sb.AppendLine("      let translateY = 0;") |> ignore
+    sb.AppendLine("      const parseInitialViewBox = () => {") |> ignore
+    sb.AppendLine("        const vb = svg.viewBox && svg.viewBox.baseVal;") |> ignore
+    sb.AppendLine("        if (vb && vb.width > 0 && vb.height > 0) {") |> ignore
+    sb.AppendLine("          return { x: vb.x, y: vb.y, width: vb.width, height: vb.height };") |> ignore
+    sb.AppendLine("        }") |> ignore
+    sb.AppendLine("") |> ignore
+    sb.AppendLine("        const rect = svg.getBoundingClientRect();") |> ignore
+    sb.AppendLine("        const width = Math.max(1, rect.width);") |> ignore
+    sb.AppendLine("        const height = Math.max(1, rect.height);") |> ignore
+    sb.AppendLine("        const fallback = { x: 0, y: 0, width, height };") |> ignore
+    sb.AppendLine("        svg.setAttribute('viewBox', `${fallback.x} ${fallback.y} ${fallback.width} ${fallback.height}`);") |> ignore
+    sb.AppendLine("        return fallback;") |> ignore
+    sb.AppendLine("      };") |> ignore
+    sb.AppendLine("") |> ignore
+    sb.AppendLine("      const initial = parseInitialViewBox();") |> ignore
+    sb.AppendLine("      let view = { ...initial };") |> ignore
+    sb.AppendLine("      const minZoom = 1;") |> ignore
+    sb.AppendLine("      const maxZoom = 20;") |> ignore
     sb.AppendLine("      let dragging = false;") |> ignore
-    sb.AppendLine("      let lastX = 0;") |> ignore
-    sb.AppendLine("      let lastY = 0;") |> ignore
+    sb.AppendLine("      let dragStartClientX = 0;") |> ignore
+    sb.AppendLine("      let dragStartClientY = 0;") |> ignore
+    sb.AppendLine("      let dragStartViewX = 0;") |> ignore
+    sb.AppendLine("      let dragStartViewY = 0;") |> ignore
     sb.AppendLine("") |> ignore
     sb.AppendLine("      container.style.overflow = 'auto';") |> ignore
-    sb.AppendLine("      svg.style.transformOrigin = '0 0';") |> ignore
-    sb.AppendLine("      svg.style.willChange = 'transform';") |> ignore
+    sb.AppendLine("      svg.style.cursor = 'grab';") |> ignore
     sb.AppendLine("") |> ignore
-    sb.AppendLine("      const applyTransform = () => {") |> ignore
-    sb.AppendLine("        svg.style.transform = `translate(${translateX}px, ${translateY}px) scale(${scale})`; ") |> ignore
+    sb.AppendLine("      const applyView = () => {") |> ignore
+    sb.AppendLine("        svg.setAttribute('viewBox', `${view.x} ${view.y} ${view.width} ${view.height}`);") |> ignore
+    sb.AppendLine("      };") |> ignore
+    sb.AppendLine("") |> ignore
+    sb.AppendLine("      const toSvgPoint = (clientX, clientY) => {") |> ignore
+    sb.AppendLine("        const ctm = svg.getScreenCTM();") |> ignore
+    sb.AppendLine("        if (!ctm) return null;") |> ignore
+    sb.AppendLine("        const point = svg.createSVGPoint();") |> ignore
+    sb.AppendLine("        point.x = clientX;") |> ignore
+    sb.AppendLine("        point.y = clientY;") |> ignore
+    sb.AppendLine("        return point.matrixTransform(ctm.inverse());") |> ignore
     sb.AppendLine("      };") |> ignore
     sb.AppendLine("") |> ignore
     sb.AppendLine("      container.addEventListener('wheel', (event) => {") |> ignore
     sb.AppendLine("        if (!event.ctrlKey) return;") |> ignore
     sb.AppendLine("") |> ignore
     sb.AppendLine("        event.preventDefault();") |> ignore
+    sb.AppendLine("        const mouse = toSvgPoint(event.clientX, event.clientY);") |> ignore
+    sb.AppendLine("        if (!mouse) return;") |> ignore
     sb.AppendLine("") |> ignore
-    sb.AppendLine("        const zoomFactor = event.deltaY < 0 ? 1.1 : 0.9;") |> ignore
-    sb.AppendLine("        const containerRect = container.getBoundingClientRect();") |> ignore
-    sb.AppendLine("        const pointerX = event.clientX - containerRect.left + container.scrollLeft;") |> ignore
-    sb.AppendLine("        const pointerY = event.clientY - containerRect.top + container.scrollTop;") |> ignore
-    sb.AppendLine("        const contentX = (pointerX - translateX) / scale;") |> ignore
-    sb.AppendLine("        const contentY = (pointerY - translateY) / scale;") |> ignore
+    sb.AppendLine("        const factor = event.deltaY < 0 ? (1 / 1.12) : 1.12;") |> ignore
+    sb.AppendLine("        const candidateWidth = view.width * factor;") |> ignore
+    sb.AppendLine("        const candidateZoom = initial.width / candidateWidth;") |> ignore
+    sb.AppendLine("        const zoom = clamp(candidateZoom, minZoom, maxZoom);") |> ignore
+    sb.AppendLine("        const nextWidth = initial.width / zoom;") |> ignore
+    sb.AppendLine("        const nextHeight = initial.height / zoom;") |> ignore
     sb.AppendLine("") |> ignore
-    sb.AppendLine("        scale = clamp(scale * zoomFactor, 0.3, 5);") |> ignore
-    sb.AppendLine("        translateX = pointerX - contentX * scale;") |> ignore
-    sb.AppendLine("        translateY = pointerY - contentY * scale;") |> ignore
+    sb.AppendLine("        const rx = (mouse.x - view.x) / view.width;") |> ignore
+    sb.AppendLine("        const ry = (mouse.y - view.y) / view.height;") |> ignore
+    sb.AppendLine("        view.x = mouse.x - (nextWidth * rx);") |> ignore
+    sb.AppendLine("        view.y = mouse.y - (nextHeight * ry);") |> ignore
+    sb.AppendLine("        view.width = nextWidth;") |> ignore
+    sb.AppendLine("        view.height = nextHeight;") |> ignore
     sb.AppendLine("") |> ignore
-    sb.AppendLine("        applyTransform();") |> ignore
+    sb.AppendLine("        applyView();") |> ignore
     sb.AppendLine("      }, { passive: false });") |> ignore
     sb.AppendLine("") |> ignore
-    sb.AppendLine("      svg.addEventListener('mousedown', (event) => {") |> ignore
+    sb.AppendLine("      container.addEventListener('mousedown', (event) => {") |> ignore
     sb.AppendLine("        if (!event.ctrlKey || event.button !== 0) return;") |> ignore
+    sb.AppendLine("        if (!(event.target instanceof Element) || !svg.contains(event.target)) return;") |> ignore
     sb.AppendLine("") |> ignore
     sb.AppendLine("        dragging = true;") |> ignore
-    sb.AppendLine("        lastX = event.clientX;") |> ignore
-    sb.AppendLine("        lastY = event.clientY;") |> ignore
+    sb.AppendLine("        dragStartClientX = event.clientX;") |> ignore
+    sb.AppendLine("        dragStartClientY = event.clientY;") |> ignore
+    sb.AppendLine("        dragStartViewX = view.x;") |> ignore
+    sb.AppendLine("        dragStartViewY = view.y;") |> ignore
+    sb.AppendLine("        document.body.style.userSelect = 'none';") |> ignore
     sb.AppendLine("        svg.style.cursor = 'grabbing';") |> ignore
     sb.AppendLine("        event.preventDefault();") |> ignore
     sb.AppendLine("      });") |> ignore
     sb.AppendLine("") |> ignore
     sb.AppendLine("      window.addEventListener('mousemove', (event) => {") |> ignore
     sb.AppendLine("        if (!dragging) return;") |> ignore
+    sb.AppendLine("        const rect = svg.getBoundingClientRect();") |> ignore
+    sb.AppendLine("        if (rect.width <= 0 || rect.height <= 0) return;") |> ignore
     sb.AppendLine("") |> ignore
-    sb.AppendLine("        const dx = event.clientX - lastX;") |> ignore
-    sb.AppendLine("        const dy = event.clientY - lastY;") |> ignore
-    sb.AppendLine("        lastX = event.clientX;") |> ignore
-    sb.AppendLine("        lastY = event.clientY;") |> ignore
-    sb.AppendLine("") |> ignore
-    sb.AppendLine("        translateX += dx;") |> ignore
-    sb.AppendLine("        translateY += dy;") |> ignore
-    sb.AppendLine("        applyTransform();") |> ignore
+    sb.AppendLine("        const dxPx = event.clientX - dragStartClientX;") |> ignore
+    sb.AppendLine("        const dyPx = event.clientY - dragStartClientY;") |> ignore
+    sb.AppendLine("        const unitsPerPixelX = view.width / rect.width;") |> ignore
+    sb.AppendLine("        const unitsPerPixelY = view.height / rect.height;") |> ignore
+    sb.AppendLine("        view.x = dragStartViewX - (dxPx * unitsPerPixelX);") |> ignore
+    sb.AppendLine("        view.y = dragStartViewY - (dyPx * unitsPerPixelY);") |> ignore
+    sb.AppendLine("        applyView();") |> ignore
+    sb.AppendLine("        event.preventDefault();") |> ignore
     sb.AppendLine("      });") |> ignore
     sb.AppendLine("") |> ignore
     sb.AppendLine("      window.addEventListener('mouseup', () => {") |> ignore
     sb.AppendLine("        if (!dragging) return;") |> ignore
     sb.AppendLine("        dragging = false;") |> ignore
-    sb.AppendLine("        svg.style.cursor = 'default';") |> ignore
+    sb.AppendLine("        document.body.style.userSelect = '';") |> ignore
+    sb.AppendLine("        svg.style.cursor = 'grab';") |> ignore
     sb.AppendLine("      });") |> ignore
     sb.AppendLine("") |> ignore
-    sb.AppendLine("      applyTransform();") |> ignore
+    sb.AppendLine("      applyView();") |> ignore
     sb.AppendLine("    }") |> ignore
     sb.AppendLine("") |> ignore
     sb.AppendLine("    window.addEventListener('load', () => {") |> ignore

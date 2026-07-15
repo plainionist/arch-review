@@ -352,9 +352,18 @@ let extractFromParseTree (projectPath: string) (filePath: string) (parseTree: Pa
             | _ -> ()
 
     and walkModuleOrNamespace (synModule: SynModuleOrNamespace) =
-        let (SynModuleOrNamespace(longId, _, _, decls, _, _, _, _, _)) = synModule
+        let (SynModuleOrNamespace(longId, _, kind, decls, _, _, _, _, _)) = synModule
         let moduleName = joinIdentifiers longId
-        modules.Add({ projectPath = projectPath; filePath = filePath; fullName = moduleName })
+
+        // Only real module declarations should become module nodes.
+        match kind with
+        | SynModuleOrNamespaceKind.NamedModule
+        | SynModuleOrNamespaceKind.AnonModule ->
+            modules.Add({ projectPath = projectPath; filePath = filePath; fullName = moduleName })
+        | SynModuleOrNamespaceKind.DeclaredNamespace
+        | SynModuleOrNamespaceKind.GlobalNamespace ->
+            ()
+
         walkDecls (Some moduleName) decls
 
     match parseTree with

@@ -34,7 +34,7 @@ The first implementation should be simple, deterministic, scriptable, and usable
 
 For F# analysis, prefer compiler-based information over regex-based source parsing where practical.
 
-## Current implementation (starter)
+## Current implementation
 
 The repository now contains an initial CLI project at `src/ArchitectureReview.Cli`.
 
@@ -50,25 +50,40 @@ Optional output folder:
 dotnet run --project src/ArchitectureReview.Cli/ArchitectureReview.Cli.fsproj -- <target-folder> --output <output-folder>
 ```
 
+Optional focused neighborhood symbol:
+
+```powershell
+dotnet run --project src/ArchitectureReview.Cli/ArchitectureReview.Cli.fsproj -- <target-folder> --focus <module-or-type-full-name>
+```
+
 Default output folder is `<target-folder>/.architecture-review`.
 
 ### Generated artifacts
 
 * `architecture.json`
 * `overview.mmd`
+* `file-composition.mmd`
 * `compile-order.mmd`
+* `neighborhood.mmd`
+* `cycles.mmd`
+* `coupling.mmd`
 * `index.html`
 
-### Included in this first cut
+### Included
 
 * recursive discovery of `.fsproj` files
 * project reference edges from `ProjectReference`
 * file compile-order edges from `Compile` item order
+* compiler-based parsing via `FSharp.Compiler.Service`
+* extraction of modules and type declarations (records, unions, enums, aliases, object models)
+* module dependency edges from `open` statements
+* type dependency edges inferred from referenced types in declaration shapes
+* focused Mermaid views for overview, composition, neighborhood, compile order, cycles, and coupling
 * deterministic JSON model emission
 * focused Mermaid outputs and an HTML index
 
-### Not implemented yet
+### Current limitations
 
-* compiler-driven extraction of modules and types
-* module-to-module and type-to-type dependency edges
-* cycle and coupling analysis views
+* type dependencies are currently inferred from declaration type shapes, not full expression/member call analysis
+* module dependencies are currently inferred from `open` declarations, not all identifier usages
+* very large repositories may need additional filtering and pagination in the HTML view

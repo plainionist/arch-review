@@ -108,7 +108,6 @@ type ExtractionResult = {
 type CliOptions = {
     targetFolder: string
     outputFolder: string option
-    focusSymbol: string option
 }
 
 let normalizePath (path: string) =
@@ -722,197 +721,6 @@ let generateFileCompositionMermaid (model: ArchitectureModel) =
 
     sb.ToString()
 
-let stronglyConnectedComponents (edges: (string * string) list) =
-    let adjacency =
-        edges
-        |> Seq.groupBy fst
-        |> Seq.map (fun (source, outgoing) -> source, outgoing |> Seq.map snd |> Seq.distinct |> Seq.toList)
-        |> Map.ofSeq
-
-    let nodes =
-        edges
-        |> Seq.collect (fun (s, t) -> [ s; t ])
-        |> Seq.distinct
-        |> Seq.toList
-
-    let mutable index = 0
-    let stack = ResizeArray<string>()
-    let onStack = System.Collections.Generic.HashSet<string>()
-    let indices = System.Collections.Generic.Dictionary<string, int>()
-    let lowLinks = System.Collections.Generic.Dictionary<string, int>()
-    let components = ResizeArray<string list>()
-
-    let rec strongConnect (v: string) =
-        indices[v] <- index
-        lowLinks[v] <- index
-        index <- index + 1
-        stack.Add(v)
-        onStack.Add(v) |> ignore
-
-        for w in Map.tryFind v adjacency |> Option.defaultValue [] do
-            if not (indices.ContainsKey(w)) then
-                strongConnect w
-                lowLinks[v] <- min lowLinks[v] lowLinks[w]
-            elif onStack.Contains(w) then
-                lowLinks[v] <- min lowLinks[v] indices[w]
-
-        if lowLinks[v] = indices[v] then
-            let mutable continuePop = true
-            let scc = ResizeArray<string>()
-            while continuePop && stack.Count > 0 do
-                let w = stack[stack.Count - 1]
-                stack.RemoveAt(stack.Count - 1)
-                onStack.Remove(w) |> ignore
-                scc.Add(w)
-                if w = v then
-                    continuePop <- false
-            components.Add(scc |> Seq.toList)
-
-    for node in nodes do
-        if not (indices.ContainsKey(node)) then
-            strongConnect node
-
-    components |> Seq.toList
-
-let generateCyclesMermaid (model: ArchitectureModel) =
-    let moduleEdges =
-        model.edges
-        |> List.filter (fun e -> e.kind = "module-use")
-        |> List.map (fun e -> e.sourceId, e.targetId)
-
-    let cyclicSets =
-        stronglyConnectedComponents moduleEdges
-        |> List.filter (fun scc -> scc.Length > 1)
-
-    let sb = StringBuilder()
-    appendLines sb (mermaidHeader "LR")
-    appendNodeClassDefinitions sb
-
-    let moduleNameById = model.modules |> Seq.map (fun m -> m.id, m.fullName) |> Map.ofSeq
-
-    if List.isEmpty cyclicSets then
-        sb.AppendLine("  no_cycles[\"No module dependency cycles detected\"]") |> ignore
-    else
-        for cycle in cyclicSets do
-            let cycleId = makeId "cycle" (String.concat "|" (cycle |> List.sort))
-            sb.AppendLine($"  subgraph {cycleId}[\"Cycle {cycleId}\"]") |> ignore
-            for nodeId in cycle do
-                let nodeLabel = moduleNameById |> Map.tryFind nodeId |> Option.defaultValue nodeId
-                sb.AppendLine($"    {nodeId}[\"{escapeLabel nodeLabel}\"]") |> ignore
-                sb.AppendLine($"    class {nodeId} module") |> ignore
-            sb.AppendLine("  end") |> ignore
-
-        for e in model.edges |> List.filter (fun e -> e.kind = "module-use") do
-            let inCycle = cyclicSets |> List.exists (fun c -> List.contains e.sourceId c && List.contains e.targetId c)
-            if inCycle then
-                sb.AppendLine($"  {e.sourceId} --> {e.targetId}") |> ignore
-
-    sb.ToString()
-
-let generateCouplingMermaid (model: ArchitectureModel) =
-    let moduleEdges =
-        model.edges
-        |> List.filter (fun e -> e.kind = "module-use")
-
-    let edgeSet =
-        moduleEdges
-        |> Seq.map (fun e -> e.sourceId, e.targetId)
-        |> Set.ofSeq
-
-    let stronglyCoupledPairs =
-        edgeSet
-        |> Seq.choose (fun (a, b) ->
-            if a < b && Set.contains (b, a) edgeSet then Some(a, b) else None)
-        |> Seq.toList
-
-    let sb = StringBuilder()
-    appendLines sb (mermaidHeader "LR")
-    appendNodeClassDefinitions sb
-
-    let moduleNameById = model.modules |> Seq.map (fun m -> m.id, m.fullName) |> Map.ofSeq
-
-    if List.isEmpty stronglyCoupledPairs then
-        sb.AppendLine("  no_coupling[\"No unusually strong coupling detected\"]") |> ignore
-    else
-        for (a, b) in stronglyCoupledPairs do
-            let aLabel = moduleNameById |> Map.tryFind a |> Option.defaultValue a
-            let bLabel = moduleNameById |> Map.tryFind b |> Option.defaultValue b
-            sb.AppendLine($"  {a}[\"{escapeLabel aLabel}\"]") |> ignore
-            sb.AppendLine($"  {b}[\"{escapeLabel bLabel}\"]") |> ignore
-            sb.AppendLine($"  class {a} module") |> ignore
-            sb.AppendLine($"  class {b} module") |> ignore
-            sb.AppendLine($"  {a} -->|coupled| {b}") |> ignore
-            sb.AppendLine($"  {b} -->|coupled| {a}") |> ignore
-
-    sb.ToString()
-
-let generateNeighborhoodMermaid (model: ArchitectureModel) (focusSymbol: string option) =
-    let dependencyEdges =
-        model.edges
-        |> List.filter (fun e -> e.kind = "module-use" || e.kind = "type-use")
-
-    let degreeByNode =
-        dependencyEdges
-        |> List.collect (fun e -> [ e.sourceId, 1; e.targetId, 1 ])
-        |> Seq.groupBy fst
-        |> Seq.map (fun (k, v) -> k, (v |> Seq.sumBy snd))
-        |> Map.ofSeq
-
-    let focusId =
-        focusSymbol
-        |> Option.bind (fun symbol ->
-            model.modules
-            |> List.tryFind (fun m -> String.Equals(m.fullName, symbol, StringComparison.OrdinalIgnoreCase))
-            |> Option.map (fun m -> m.id)
-            |> Option.orElseWith (fun () ->
-                model.types
-                |> List.tryFind (fun t -> String.Equals(t.fullName, symbol, StringComparison.OrdinalIgnoreCase))
-                |> Option.map (fun t -> t.id)))
-        |> Option.orElseWith (fun () ->
-            degreeByNode
-            |> Map.toList
-            |> List.sortByDescending snd
-            |> List.tryHead
-            |> Option.map fst)
-
-    let sb = StringBuilder()
-    appendLines sb (mermaidHeader "LR")
-    appendNodeClassDefinitions sb
-
-    let moduleNameById = model.modules |> Seq.map (fun m -> m.id, m.fullName) |> Map.ofSeq
-    let typeNameById = model.types |> Seq.map (fun t -> t.id, t.fullName) |> Map.ofSeq
-
-    match focusId with
-    | None -> sb.AppendLine("  empty[\"No dependency neighborhood available\"]") |> ignore
-    | Some focus ->
-        let neighborhoodNodes =
-            dependencyEdges
-            |> List.collect (fun e ->
-                if e.sourceId = focus || e.targetId = focus then [ e.sourceId; e.targetId ] else [])
-            |> Set.ofList
-            |> Set.add focus
-
-        for node in neighborhoodNodes do
-            let nodeLabel =
-                match Map.tryFind node moduleNameById with
-                | Some name -> name
-                | None -> typeNameById |> Map.tryFind node |> Option.defaultValue node
-
-            let klass =
-                if Map.containsKey node moduleNameById then "module"
-                elif Map.containsKey node typeNameById then "type"
-                else "file"
-
-            sb.AppendLine($"  {node}[\"{escapeLabel nodeLabel}\"]") |> ignore
-            sb.AppendLine($"  class {node} {klass}") |> ignore
-
-        for e in dependencyEdges do
-            if Set.contains e.sourceId neighborhoodNodes && Set.contains e.targetId neighborhoodNodes then
-                let label = if e.kind = "module-use" then "module" else "type"
-                sb.AppendLine($"  {e.sourceId} -->|{label}| {e.targetId}") |> ignore
-
-    sb.ToString()
-
 let generateIndexHtml (diagrams: (string * string) list) =
         let sb = StringBuilder()
         sb.AppendLine("<!doctype html>") |> ignore
@@ -971,12 +779,11 @@ let parseArgs (argv: string array) =
         match remaining with
         | [] -> Ok opts
         | ("--output" | "-o") :: output :: tail -> parseTail { opts with outputFolder = Some output } tail
-        | "--focus" :: focus :: tail -> parseTail { opts with focusSymbol = Some focus } tail
         | unknown :: _ -> Error $"Unknown argument: {unknown}"
 
     match args with
     | targetFolder :: tail when not (targetFolder.StartsWith("-")) ->
-        parseTail { targetFolder = targetFolder; outputFolder = None; focusSymbol = None } tail
+        parseTail { targetFolder = targetFolder; outputFolder = None } tail
     | _ -> Error "Missing target folder"
 
 let run (options: CliOptions) =
@@ -1014,17 +821,11 @@ let run (options: CliOptions) =
         let overviewDiagram = generateOverviewMermaid model
         let compositionDiagram = generateFileCompositionMermaid model
         let compileOrderDiagram = generateCompileOrderMermaid model
-        let neighborhoodDiagram = generateNeighborhoodMermaid model options.focusSymbol
-        let cyclesDiagram = generateCyclesMermaid model
-        let couplingDiagram = generateCouplingMermaid model
 
         let diagrams = [
             ("High-level project and module overview", overviewDiagram)
             ("File composition with modules and types", compositionDiagram)
             ("Compile-order view", compileOrderDiagram)
-            ("Dependencies around selected/high-degree symbol", neighborhoodDiagram)
-            ("Dependency cycles view", cyclesDiagram)
-            ("Strong coupling view", couplingDiagram)
         ]
 
         writeJson jsonPath model
@@ -1047,6 +848,6 @@ let main argv =
     | Ok opts -> run opts
     | Error message ->
         eprintfn "%s" message
-        eprintfn "Usage: architecture-review <target-folder> [--output <folder>] [--focus <module-or-type-full-name>]"
+        eprintfn "Usage: architecture-review <target-folder> [--output <folder>]"
         1
 

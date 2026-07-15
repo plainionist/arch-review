@@ -10,6 +10,11 @@
   </ItemGroup>
 
   <ItemGroup>
+    <Compile Include="Common.fs" />
+    <Compile Include="Model.fs" />
+    <Compile Include="Parsing.fs" />
+    <Compile Include="Builder.fs" />
+    <Compile Include="Rendering.fs" />
     <Compile Include="Program.fs" />
   </ItemGroup>
 

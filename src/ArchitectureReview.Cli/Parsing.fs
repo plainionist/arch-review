@@ -134,6 +134,26 @@ and collectTypeNamesFromBinding (binding: SynBinding) =
     @ returnTypes
     @ (collectTypeNamesFromExpr expr)
 
+let rec collectTypeNamesFromMemberDefn (memberDefn: SynMemberDefn) =
+    match memberDefn with
+    | SynMemberDefn.Member(binding, _) -> collectTypeNamesFromBinding binding
+    | SynMemberDefn.GetSetMember(getBindingOpt, setBindingOpt, _, _) ->
+        (getBindingOpt |> Option.map collectTypeNamesFromBinding |> Option.defaultValue [])
+        @ (setBindingOpt |> Option.map collectTypeNamesFromBinding |> Option.defaultValue [])
+    | SynMemberDefn.ImplicitCtor(_, _, ctorArgs, _, _, _, _) -> collectTypeNamesFromPattern ctorArgs
+    | SynMemberDefn.LetBindings(bindings, _, _, _) -> bindings |> List.collect collectTypeNamesFromBinding
+    | SynMemberDefn.Interface(_, _, memberDefnsOpt, _) ->
+        memberDefnsOpt
+        |> Option.map (List.collect collectTypeNamesFromMemberDefn)
+        |> Option.defaultValue []
+    | SynMemberDefn.NestedType(typeDefn, _, _) ->
+        let (SynTypeDefn(_, _, nestedMembers, _, _, _)) = typeDefn
+        nestedMembers |> List.collect collectTypeNamesFromMemberDefn
+    | _ -> []
+
+let collectTypeNamesFromMemberDefns (memberDefns: SynMemberDefn list) =
+    memberDefns |> List.collect collectTypeNamesFromMemberDefn
+
 let parseFsproj (projectPath: string) =
     let projectPath = normalizePath projectPath
     let projectDir = Path.GetDirectoryName(projectPath)
@@ -181,7 +201,7 @@ let parseFile (checker: FSharpChecker) (parsingOptions: FSharpParsingOptions) (f
     |> Async.RunSynchronously
 
 let parseTypeDefn (projectPath: string) (filePath: string) (currentModule: string option) (typeDefn: SynTypeDefn) =
-    let (SynTypeDefn(typeInfo, typeRepr, _, _, _, _)) = typeDefn
+    let (SynTypeDefn(typeInfo, typeRepr, members, _, _, _)) = typeDefn
     let (SynComponentInfo(_, _, _, longId, _, _, _, _)) = typeInfo
     let localName = joinIdentifiers longId
 
@@ -190,6 +210,17 @@ let parseTypeDefn (projectPath: string) (filePath: string) (currentModule: strin
         | Some moduleName when not (String.IsNullOrWhiteSpace(moduleName)) -> $"{moduleName}.{localName}"
         | _ -> localName
 
+    let objectModelMemberTypeNames =
+        match typeRepr with
+        | SynTypeDefnRepr.ObjectModel(_, objectMembers, _) -> collectTypeNamesFromMemberDefns objectMembers
+        | _ -> []
+
+    let referencedTypeNames =
+        (collectReferencedTypeNames typeRepr)
+        @ objectModelMemberTypeNames
+        @ (collectTypeNamesFromMemberDefns members)
+        |> List.distinct
+
     {
         projectPath = projectPath
         filePath = filePath
@@ -197,7 +228,7 @@ let parseTypeDefn (projectPath: string) (filePath: string) (currentModule: strin
         fullName = fullName
         name = localName
         kind = typeKindFromRepr typeRepr
-        referencedTypeNames = collectReferencedTypeNames typeRepr
+        referencedTypeNames = referencedTypeNames
     }
 
 let extractFromParseTree (projectPath: string) (filePath: string) (parseTree: ParsedInput) =

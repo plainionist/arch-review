@@ -256,12 +256,11 @@ let generateIndexHtml (diagrams: (string * string) list) =
     sb.AppendLine("      };") |> ignore
     sb.AppendLine("") |> ignore
     sb.AppendLine("      const toSvgPoint = (clientX, clientY) => {") |> ignore
-    sb.AppendLine("        const ctm = svg.getScreenCTM();") |> ignore
-    sb.AppendLine("        if (!ctm) return null;") |> ignore
-    sb.AppendLine("        const point = svg.createSVGPoint();") |> ignore
-    sb.AppendLine("        point.x = clientX;") |> ignore
-    sb.AppendLine("        point.y = clientY;") |> ignore
-    sb.AppendLine("        return point.matrixTransform(ctm.inverse());") |> ignore
+    sb.AppendLine("        const rect = svg.getBoundingClientRect();") |> ignore
+    sb.AppendLine("        if (rect.width <= 0 || rect.height <= 0) return null;") |> ignore
+    sb.AppendLine("        const x = view.x + ((clientX - rect.left) / rect.width) * view.width;") |> ignore
+    sb.AppendLine("        const y = view.y + ((clientY - rect.top) / rect.height) * view.height;") |> ignore
+    sb.AppendLine("        return { x, y };") |> ignore
     sb.AppendLine("      };") |> ignore
     sb.AppendLine("") |> ignore
     sb.AppendLine("      container.addEventListener('wheel', (event) => {") |> ignore

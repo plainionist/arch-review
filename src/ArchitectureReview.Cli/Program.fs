@@ -615,6 +615,9 @@ let writeJson (outputPath: string) (model: ArchitectureModel) =
 let escapeLabel (text: string) =
     text.Replace("\"", "'")
 
+let escapeHtml (text: string) =
+    text.Replace("&", "&amp;").Replace("<", "&lt;").Replace(">", "&gt;")
+
 let mermaidHeader (direction: string) =
     [
         "%%{init: {'flowchart': {'defaultRenderer': 'elk'}} }%%"
@@ -624,16 +627,26 @@ let mermaidHeader (direction: string) =
 let appendLines (sb: StringBuilder) (lines: string seq) =
     lines |> Seq.iter (fun line -> sb.AppendLine(line) |> ignore)
 
+let appendNodeClassDefinitions (sb: StringBuilder) =
+    sb.AppendLine("  classDef project fill:#0f766e,color:#ffffff,stroke:#115e59,stroke-width:1px") |> ignore
+    sb.AppendLine("  classDef folder fill:#0ea5e9,color:#082f49,stroke:#0369a1,stroke-width:1px") |> ignore
+    sb.AppendLine("  classDef file fill:#fde68a,color:#3f2f00,stroke:#f59e0b,stroke-width:1px") |> ignore
+    sb.AppendLine("  classDef module fill:#a7f3d0,color:#064e3b,stroke:#10b981,stroke-width:1px") |> ignore
+    sb.AppendLine("  classDef type fill:#e9d5ff,color:#3b0764,stroke:#a855f7,stroke-width:1px") |> ignore
+
 let generateOverviewMermaid (model: ArchitectureModel) =
     let sb = StringBuilder()
     appendLines sb (mermaidHeader "LR")
+    appendNodeClassDefinitions sb
 
     for p in model.projects do
-        sb.AppendLine($"  {p.id}[\"Project: {escapeLabel p.name}\"]") |> ignore
+        sb.AppendLine($"  {p.id}[\"{escapeLabel p.name}\"]") |> ignore
+        sb.AppendLine($"  class {p.id} project") |> ignore
 
     for m in model.modules do
-        sb.AppendLine($"  {m.id}[\"Module: {escapeLabel m.fullName}\"]") |> ignore
+        sb.AppendLine($"  {m.id}[\"{escapeLabel m.fullName}\"]") |> ignore
         sb.AppendLine($"  {m.projectId} -. contains .-> {m.id}") |> ignore
+        sb.AppendLine($"  class {m.id} module") |> ignore
 
     for e in model.edges |> List.filter (fun e -> e.kind = "project-reference") do
         sb.AppendLine($"  {e.sourceId} --> {e.targetId}") |> ignore
@@ -646,14 +659,18 @@ let generateOverviewMermaid (model: ArchitectureModel) =
 let generateCompileOrderMermaid (model: ArchitectureModel) =
     let sb = StringBuilder()
     appendLines sb (mermaidHeader "TB")
+    appendNodeClassDefinitions sb
 
     let filesById = model.files |> Seq.map (fun f -> f.id, f) |> Map.ofSeq
 
     for p in model.projects do
         sb.AppendLine($"  subgraph {p.id}[\"{escapeLabel p.name} compile order\"]") |> ignore
+        sb.AppendLine($"  class {p.id} project") |> ignore
         for fileId in p.fileIds do
             match Map.tryFind fileId filesById with
-            | Some file -> sb.AppendLine($"    {file.id}[\"{escapeLabel file.path}\"]") |> ignore
+            | Some file ->
+                sb.AppendLine($"    {file.id}[\"{escapeLabel file.path}\"]") |> ignore
+                sb.AppendLine($"    class {file.id} file") |> ignore
             | None -> ()
         sb.AppendLine("  end") |> ignore
 
@@ -665,25 +682,31 @@ let generateCompileOrderMermaid (model: ArchitectureModel) =
 let generateFileCompositionMermaid (model: ArchitectureModel) =
     let sb = StringBuilder()
     appendLines sb (mermaidHeader "TB")
+    appendNodeClassDefinitions sb
 
     for p in model.projects do
         sb.AppendLine($"  subgraph comp_{p.id}[\"{escapeLabel p.name}\"]") |> ignore
+        sb.AppendLine($"  class {p.id} project") |> ignore
 
         let projectFolders = model.folders |> List.filter (fun f -> f.projectId = p.id)
         for folder in projectFolders do
             sb.AppendLine($"    subgraph comp_{folder.id}[\"{escapeLabel folder.path}\"]") |> ignore
+            sb.AppendLine($"    class {folder.id} folder") |> ignore
             let folderFiles = model.files |> List.filter (fun f -> f.folderId = folder.id)
             for file in folderFiles do
-                sb.AppendLine($"      {file.id}[\"File: {escapeLabel file.path}\"]") |> ignore
+                sb.AppendLine($"      {file.id}[\"{escapeLabel file.path}\"]") |> ignore
+                sb.AppendLine($"      class {file.id} file") |> ignore
 
                 let fileModules = model.modules |> List.filter (fun m -> m.fileId = file.id)
                 for m in fileModules do
-                    sb.AppendLine($"      {m.id}[\"Module: {escapeLabel m.name}\"]") |> ignore
+                    sb.AppendLine($"      {m.id}[\"{escapeLabel m.name}\"]") |> ignore
                     sb.AppendLine($"      {file.id} -. contains .-> {m.id}") |> ignore
+                    sb.AppendLine($"      class {m.id} module") |> ignore
 
                 let fileTypes = model.types |> List.filter (fun t -> t.fileId = file.id)
                 for t in fileTypes do
-                    sb.AppendLine($"      {t.id}[\"Type: {escapeLabel t.name} ({escapeLabel t.kind})\"]") |> ignore
+                    sb.AppendLine($"      {t.id}[\"{escapeLabel t.name}\"]") |> ignore
+                    sb.AppendLine($"      class {t.id} type") |> ignore
 
                     match t.moduleId with
                     | Some moduleId -> sb.AppendLine($"      {moduleId} -. contains .-> {t.id}") |> ignore
@@ -763,6 +786,9 @@ let generateCyclesMermaid (model: ArchitectureModel) =
 
     let sb = StringBuilder()
     appendLines sb (mermaidHeader "LR")
+    appendNodeClassDefinitions sb
+
+    let moduleNameById = model.modules |> Seq.map (fun m -> m.id, m.fullName) |> Map.ofSeq
 
     if List.isEmpty cyclicSets then
         sb.AppendLine("  no_cycles[\"No module dependency cycles detected\"]") |> ignore
@@ -771,7 +797,9 @@ let generateCyclesMermaid (model: ArchitectureModel) =
             let cycleId = makeId "cycle" (String.concat "|" (cycle |> List.sort))
             sb.AppendLine($"  subgraph {cycleId}[\"Cycle {cycleId}\"]") |> ignore
             for nodeId in cycle do
-                sb.AppendLine($"    {nodeId}") |> ignore
+                let nodeLabel = moduleNameById |> Map.tryFind nodeId |> Option.defaultValue nodeId
+                sb.AppendLine($"    {nodeId}[\"{escapeLabel nodeLabel}\"]") |> ignore
+                sb.AppendLine($"    class {nodeId} module") |> ignore
             sb.AppendLine("  end") |> ignore
 
         for e in model.edges |> List.filter (fun e -> e.kind = "module-use") do
@@ -799,11 +827,20 @@ let generateCouplingMermaid (model: ArchitectureModel) =
 
     let sb = StringBuilder()
     appendLines sb (mermaidHeader "LR")
+    appendNodeClassDefinitions sb
+
+    let moduleNameById = model.modules |> Seq.map (fun m -> m.id, m.fullName) |> Map.ofSeq
 
     if List.isEmpty stronglyCoupledPairs then
         sb.AppendLine("  no_coupling[\"No unusually strong coupling detected\"]") |> ignore
     else
         for (a, b) in stronglyCoupledPairs do
+            let aLabel = moduleNameById |> Map.tryFind a |> Option.defaultValue a
+            let bLabel = moduleNameById |> Map.tryFind b |> Option.defaultValue b
+            sb.AppendLine($"  {a}[\"{escapeLabel aLabel}\"]") |> ignore
+            sb.AppendLine($"  {b}[\"{escapeLabel bLabel}\"]") |> ignore
+            sb.AppendLine($"  class {a} module") |> ignore
+            sb.AppendLine($"  class {b} module") |> ignore
             sb.AppendLine($"  {a} -->|coupled| {b}") |> ignore
             sb.AppendLine($"  {b} -->|coupled| {a}") |> ignore
 
@@ -840,6 +877,10 @@ let generateNeighborhoodMermaid (model: ArchitectureModel) (focusSymbol: string 
 
     let sb = StringBuilder()
     appendLines sb (mermaidHeader "LR")
+    appendNodeClassDefinitions sb
+
+    let moduleNameById = model.modules |> Seq.map (fun m -> m.id, m.fullName) |> Map.ofSeq
+    let typeNameById = model.types |> Seq.map (fun t -> t.id, t.fullName) |> Map.ofSeq
 
     match focusId with
     | None -> sb.AppendLine("  empty[\"No dependency neighborhood available\"]") |> ignore
@@ -852,7 +893,18 @@ let generateNeighborhoodMermaid (model: ArchitectureModel) (focusSymbol: string 
             |> Set.add focus
 
         for node in neighborhoodNodes do
-            sb.AppendLine($"  {node}") |> ignore
+            let nodeLabel =
+                match Map.tryFind node moduleNameById with
+                | Some name -> name
+                | None -> typeNameById |> Map.tryFind node |> Option.defaultValue node
+
+            let klass =
+                if Map.containsKey node moduleNameById then "module"
+                elif Map.containsKey node typeNameById then "type"
+                else "file"
+
+            sb.AppendLine($"  {node}[\"{escapeLabel nodeLabel}\"]") |> ignore
+            sb.AppendLine($"  class {node} {klass}") |> ignore
 
         for e in dependencyEdges do
             if Set.contains e.sourceId neighborhoodNodes && Set.contains e.targetId neighborhoodNodes then
@@ -861,57 +913,52 @@ let generateNeighborhoodMermaid (model: ArchitectureModel) (focusSymbol: string 
 
     sb.ToString()
 
-let generateIndexHtml (model: ArchitectureModel) =
-    let warningItems =
-        if List.isEmpty model.warnings then "<li>None</li>"
-        else model.warnings |> List.map escapeLabel |> List.map (fun w -> $"<li>{w}</li>") |> String.concat "\n"
+let generateIndexHtml (diagrams: (string * string) list) =
+        let sb = StringBuilder()
+        sb.AppendLine("<!doctype html>") |> ignore
+        sb.AppendLine("<html lang=\"en\">") |> ignore
+        sb.AppendLine("<head>") |> ignore
+        sb.AppendLine("  <meta charset=\"utf-8\" />") |> ignore
+        sb.AppendLine("  <meta name=\"viewport\" content=\"width=device-width, initial-scale=1\" />") |> ignore
+        sb.AppendLine("  <title>Architecture Review Charts</title>") |> ignore
+        sb.AppendLine("  <style>") |> ignore
+        sb.AppendLine("    body { font-family: Segoe UI, sans-serif; margin: 1.5rem; background: #f5f7fb; color: #111827; }") |> ignore
+        sb.AppendLine("    .chart { background: #ffffff; border: 1px solid #d1d5db; border-radius: 0.75rem; padding: 1rem; margin-bottom: 1rem; }") |> ignore
+        sb.AppendLine("    .legend { display: flex; flex-wrap: wrap; gap: 0.75rem; margin: 0 0 1rem 0; }") |> ignore
+        sb.AppendLine("    .legend-item { display: inline-flex; align-items: center; gap: 0.4rem; background: #ffffff; border: 1px solid #d1d5db; border-radius: 999px; padding: 0.3rem 0.7rem; }") |> ignore
+        sb.AppendLine("    .swatch { width: 0.9rem; height: 0.9rem; border-radius: 0.2rem; border: 1px solid rgba(0,0,0,0.15); }") |> ignore
+        sb.AppendLine("    .project { background: #0f766e; }") |> ignore
+        sb.AppendLine("    .folder { background: #0ea5e9; }") |> ignore
+        sb.AppendLine("    .file { background: #fde68a; }") |> ignore
+        sb.AppendLine("    .module { background: #a7f3d0; }") |> ignore
+        sb.AppendLine("    .type { background: #e9d5ff; }") |> ignore
+        sb.AppendLine("    h1, h2 { margin-top: 0; }") |> ignore
+        sb.AppendLine("    pre.mermaid { background: #ffffff; overflow: auto; }") |> ignore
+        sb.AppendLine("  </style>") |> ignore
+        sb.AppendLine("  <script type=\"module\">") |> ignore
+        sb.AppendLine("    import mermaid from \"https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs\";") |> ignore
+        sb.AppendLine("    mermaid.initialize({ startOnLoad: true });") |> ignore
+        sb.AppendLine("  </script>") |> ignore
+        sb.AppendLine("</head>") |> ignore
+        sb.AppendLine("<body>") |> ignore
+        sb.AppendLine("  <h1>Architecture Review Charts</h1>") |> ignore
+        sb.AppendLine("  <div class=\"legend\">") |> ignore
+        sb.AppendLine("    <span class=\"legend-item\"><span class=\"swatch project\"></span>Project</span>") |> ignore
+        sb.AppendLine("    <span class=\"legend-item\"><span class=\"swatch folder\"></span>Folder</span>") |> ignore
+        sb.AppendLine("    <span class=\"legend-item\"><span class=\"swatch file\"></span>File</span>") |> ignore
+        sb.AppendLine("    <span class=\"legend-item\"><span class=\"swatch module\"></span>Module</span>") |> ignore
+        sb.AppendLine("    <span class=\"legend-item\"><span class=\"swatch type\"></span>Type</span>") |> ignore
+        sb.AppendLine("  </div>") |> ignore
 
-    $"""
-<!doctype html>
-<html lang="en">
-<head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Architecture Review</title>
-  <style>
-    body {{ font-family: Segoe UI, sans-serif; margin: 1.5rem; background: #f5f7fb; color: #111827; }}
-    .card {{ background: #ffffff; border: 1px solid #d1d5db; border-radius: 0.75rem; padding: 1rem; margin-bottom: 1rem; }}
-    h1, h2 {{ margin-top: 0; }}
-    ul {{ margin: 0.25rem 0 0.75rem 1.25rem; }}
-  </style>
-</head>
-<body>
-  <h1>Architecture Review Output</h1>
-  <div class="card">
-    <p><strong>Root:</strong> {model.rootPath}</p>
-    <p><strong>Projects:</strong> {model.projects.Length}</p>
-    <p><strong>Folders:</strong> {model.folders.Length}</p>
-    <p><strong>Files:</strong> {model.files.Length}</p>
-    <p><strong>Modules:</strong> {model.modules.Length}</p>
-    <p><strong>Types:</strong> {model.types.Length}</p>
-    <p><strong>Edges:</strong> {model.edges.Length}</p>
-    <p><a href="architecture.json">Open architecture.json</a></p>
-  </div>
-  <div class="card">
-    <h2>Focused diagrams</h2>
-    <ul>
-      <li><a href="overview.mmd">High-level project and module overview</a></li>
-      <li><a href="file-composition.mmd">File composition with modules and types</a></li>
-      <li><a href="compile-order.mmd">Compile-order view</a></li>
-      <li><a href="neighborhood.mmd">Dependencies around selected/high-degree symbol</a></li>
-      <li><a href="cycles.mmd">Dependency cycles view</a></li>
-      <li><a href="coupling.mmd">Strong coupling view</a></li>
-    </ul>
-  </div>
-  <div class="card">
-    <h2>Warnings</h2>
-    <ul>
-      {warningItems}
-    </ul>
-  </div>
-</body>
-</html>
-"""
+        for (title, mermaidText) in diagrams do
+                sb.AppendLine("  <section class=\"chart\">") |> ignore
+                sb.AppendLine($"    <h2>{escapeHtml title}</h2>") |> ignore
+                sb.AppendLine($"    <pre class=\"mermaid\">{escapeHtml mermaidText}</pre>") |> ignore
+                sb.AppendLine("  </section>") |> ignore
+
+        sb.AppendLine("</body>") |> ignore
+        sb.AppendLine("</html>") |> ignore
+        sb.ToString()
 
 let ensureDirectory path =
     if not (Directory.Exists(path)) then
@@ -945,24 +992,43 @@ let run (options: CliOptions) =
     else
         ensureDirectory outputFolder
 
+        let staleArtifacts = [
+            "overview.mmd"
+            "file-composition.mmd"
+            "compile-order.mmd"
+            "neighborhood.mmd"
+            "cycles.mmd"
+            "coupling.mmd"
+            "viewer.html"
+        ]
+
+        for artifact in staleArtifacts do
+            let artifactPath = Path.Combine(outputFolder, artifact)
+            if File.Exists(artifactPath) then
+                File.Delete(artifactPath)
+
         let model = buildModel targetFolder
         let jsonPath = Path.Combine(outputFolder, "architecture.json")
-        let overviewPath = Path.Combine(outputFolder, "overview.mmd")
-        let compositionPath = Path.Combine(outputFolder, "file-composition.mmd")
-        let compileOrderPath = Path.Combine(outputFolder, "compile-order.mmd")
-        let neighborhoodPath = Path.Combine(outputFolder, "neighborhood.mmd")
-        let cyclesPath = Path.Combine(outputFolder, "cycles.mmd")
-        let couplingPath = Path.Combine(outputFolder, "coupling.mmd")
         let htmlPath = Path.Combine(outputFolder, "index.html")
 
+        let overviewDiagram = generateOverviewMermaid model
+        let compositionDiagram = generateFileCompositionMermaid model
+        let compileOrderDiagram = generateCompileOrderMermaid model
+        let neighborhoodDiagram = generateNeighborhoodMermaid model options.focusSymbol
+        let cyclesDiagram = generateCyclesMermaid model
+        let couplingDiagram = generateCouplingMermaid model
+
+        let diagrams = [
+            ("High-level project and module overview", overviewDiagram)
+            ("File composition with modules and types", compositionDiagram)
+            ("Compile-order view", compileOrderDiagram)
+            ("Dependencies around selected/high-degree symbol", neighborhoodDiagram)
+            ("Dependency cycles view", cyclesDiagram)
+            ("Strong coupling view", couplingDiagram)
+        ]
+
         writeJson jsonPath model
-        File.WriteAllText(overviewPath, generateOverviewMermaid model)
-        File.WriteAllText(compositionPath, generateFileCompositionMermaid model)
-        File.WriteAllText(compileOrderPath, generateCompileOrderMermaid model)
-        File.WriteAllText(neighborhoodPath, generateNeighborhoodMermaid model options.focusSymbol)
-        File.WriteAllText(cyclesPath, generateCyclesMermaid model)
-        File.WriteAllText(couplingPath, generateCouplingMermaid model)
-        File.WriteAllText(htmlPath, generateIndexHtml model)
+        File.WriteAllText(htmlPath, generateIndexHtml diagrams)
 
         printfn "Analyzed root: %s" targetFolder
         printfn "Projects: %d" model.projects.Length
@@ -972,7 +1038,7 @@ let run (options: CliOptions) =
         printfn "Types: %d" model.types.Length
         printfn "Edges: %d" model.edges.Length
         printfn "Warnings: %d" model.warnings.Length
-        printfn "Output written to: %s" outputFolder
+        printfn "Output written to: %s" htmlPath
         0
 
 [<EntryPoint>]

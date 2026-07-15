@@ -339,12 +339,8 @@ let generateIndexHtml (diagrams: (string * string) list) =
     sb.AppendLine("  <div class=\"legend\">") |> ignore
     sb.AppendLine("    <span class=\"legend-item\"><span class=\"swatch project\"></span>Project</span>") |> ignore
     sb.AppendLine("    <span class=\"legend-item\"><span class=\"swatch folder\"></span>Folder</span>") |> ignore
-    sb.AppendLine("    <span class=\"legend-item\"><span class=\"swatch file\"></span>File Box</span>") |> ignore
     sb.AppendLine("    <span class=\"legend-item\"><span class=\"swatch module\"></span>Module</span>") |> ignore
     sb.AppendLine("    <span class=\"legend-item\"><span class=\"swatch type\"></span>Type</span>") |> ignore
-    sb.AppendLine("    <span class=\"legend-item\">uses: module -&gt; module</span>") |> ignore
-    sb.AppendLine("    <span class=\"legend-item\">uses-type: module -&gt; type</span>") |> ignore
-    sb.AppendLine("    <span class=\"legend-item\">type: type -&gt; type</span>") |> ignore
     sb.AppendLine("  </div>") |> ignore
 
     for (title, mermaidText) in diagrams do

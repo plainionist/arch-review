@@ -52,9 +52,7 @@ let run (options: CliOptions) =
         let htmlPath = Path.Combine(outputFolder, "index.html")
 
         let diagrams = [
-            ("High-level project and module overview", generateOverviewMermaid model)
-            ("File composition with modules and types", generateFileCompositionMermaid model)
-            ("Compile-order view", generateCompileOrderMermaid model)
+            ("File composition with modules/types and dependencies", generateFileCompositionMermaid model)
         ]
 
         writeJson jsonPath model

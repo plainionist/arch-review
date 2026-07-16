@@ -17,6 +17,88 @@ let writeJson (outputPath: string) (model: ArchitectureModel) =
     let json = JsonSerializer.Serialize(model, jsonOptions)
     File.WriteAllText(outputPath, json)
 
+let toArchitectureFocusModel (model: ArchitectureModel) =
+    let projectsById = model.projects |> Seq.map (fun p -> p.id, p) |> Map.ofSeq
+    let filesById = model.files |> Seq.map (fun f -> f.id, f) |> Map.ofSeq
+    let modulesById = model.modules |> Seq.map (fun m -> m.id, m) |> Map.ofSeq
+    let modulesByProjectAndName = model.modules |> Seq.map (fun m -> (m.projectId, m.fullName), m) |> Map.ofSeq
+
+    let tryFindParentModuleId (projectId: string) (fullName: string) =
+        let parts = fullName.Split('.', StringSplitOptions.RemoveEmptyEntries)
+
+        if parts.Length <= 1 then
+            None
+        else
+            [ for len in parts.Length - 1 .. -1 .. 1 -> parts |> Array.take len |> String.concat "." ]
+            |> List.tryPick (fun candidate ->
+                modulesByProjectAndName
+                |> Map.tryFind (projectId, candidate)
+                |> Option.map (fun moduleNode -> moduleNode.id))
+
+    let moduleEntities : ArchitectureEntitySummary list =
+        model.modules
+        |> List.map (fun moduleNode ->
+            let project = projectsById[moduleNode.projectId]
+            let fileNode = filesById[moduleNode.fileId]
+
+            {
+                id = moduleNode.id
+                kind = "module"
+                name = moduleNode.name
+                fullName = moduleNode.fullName
+                project = project.name
+                file = fileNode.path
+                parentId = tryFindParentModuleId moduleNode.projectId moduleNode.fullName
+            })
+
+    let typeEntities : ArchitectureEntitySummary list =
+        model.types
+        |> List.map (fun typeNode ->
+            let project = projectsById[typeNode.projectId]
+            let fileNode = filesById[typeNode.fileId]
+            {
+                id = typeNode.id
+                kind = "type"
+                name = typeNode.name
+                fullName = typeNode.fullName
+                project = project.name
+                file = fileNode.path
+                parentId = typeNode.moduleId
+            })
+
+    let entityIds =
+        Seq.append moduleEntities typeEntities
+        |> Seq.map (fun entity -> entity.id)
+        |> Set.ofSeq
+
+    let dependencies : ArchitectureDependencySummary list =
+        model.edges
+        |> List.filter (fun edge ->
+            (edge.kind = "module-use" || edge.kind = "module-type-use" || edge.kind = "type-use")
+            && Set.contains edge.sourceId entityIds
+            && Set.contains edge.targetId entityIds)
+        |> List.groupBy (fun edge -> edge.sourceId, edge.targetId)
+        |> List.map (fun ((sourceId, targetId), groupedEdges) ->
+            ({
+                sourceId = sourceId
+                targetId = targetId
+                reasons = groupedEdges |> List.map (fun edge -> edge.details) |> List.distinct |> List.sort
+            } : ArchitectureDependencySummary))
+        |> List.sortBy (fun dep -> dep.sourceId, dep.targetId)
+
+    {
+        schemaVersion = "0.2.0"
+        generatedAtUtc = model.generatedAtUtc
+        rootPath = model.rootPath
+        entities = List.append moduleEntities typeEntities |> List.sortBy (fun entity -> entity.kind, entity.fullName)
+        dependencies = dependencies
+    } : ArchitectureFocusModel
+
+let writeArchitectureFocusJson (outputPath: string) (model: ArchitectureModel) =
+    let focusModel = toArchitectureFocusModel model
+    let json = JsonSerializer.Serialize(focusModel, jsonOptions)
+    File.WriteAllText(outputPath, json)
+
 let mermaidHeader (direction: string) =
     [
         "%%{init: {'flowchart': {'defaultRenderer': 'elk'}} }%%"

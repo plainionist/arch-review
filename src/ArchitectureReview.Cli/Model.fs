@@ -60,6 +60,30 @@ type ArchitectureModel = {
     warnings: string list
 }
 
+type ArchitectureEntitySummary = {
+    id: string
+    kind: string
+    name: string
+    fullName: string
+    project: string
+    file: string
+    parentId: string option
+}
+
+type ArchitectureDependencySummary = {
+    sourceId: string
+    targetId: string
+    reasons: string list
+}
+
+type ArchitectureFocusModel = {
+    schemaVersion: string
+    generatedAtUtc: string
+    rootPath: string
+    entities: ArchitectureEntitySummary list
+    dependencies: ArchitectureDependencySummary list
+}
+
 type ParsedProject = {
     projectPath: string
     projectName: string

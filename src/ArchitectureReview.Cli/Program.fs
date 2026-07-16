@@ -49,6 +49,7 @@ let run (options: CliOptions) =
 
         let model = buildModel targetFolder
         let jsonPath = Path.Combine(outputFolder, "architecture.json")
+        let focusJsonPath = Path.Combine(outputFolder, "architecture-focus.json")
         let htmlPath = Path.Combine(outputFolder, "index.html")
 
         let diagrams = [
@@ -56,6 +57,7 @@ let run (options: CliOptions) =
         ]
 
         writeJson jsonPath model
+        writeArchitectureFocusJson focusJsonPath model
         File.WriteAllText(htmlPath, generateIndexHtml diagrams)
 
         printfn "Output written to: %s" htmlPath
